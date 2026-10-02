@@ -1,0 +1,129 @@
+---
+name: juicefs
+
+releases:
+- name: juicefs
+  version: latest
+- name: postgres
+  version: '57.0.0'
+  url: https://bosh.io/d/github.com/cloudfoundry/postgres-release?v=57.0.0
+  sha1: sha256:fc5f73f57a6b9e7208e4293a7fb7faf11e4fb8fc8bb79db80d0d97e41ab1ee2a
+- name: bpm
+  version: '1.4.41'
+  url: https://bosh.io/d/github.com/cloudfoundry/bpm-release?v=1.4.41
+  sha1: sha256:7b445508d63d2171d892ba33f836087e1e519b9782f44c5fa5290323616ca8e6
+
+stemcells:
+- alias: default
+  os: ubuntu-noble
+  version: latest
+
+update:
+  canaries: 1
+  max_in_flight: 1
+  canary_watch_time: 30000-60000
+  update_watch_time: 30000-60000
+
+instance_groups:
+- name: postgres
+  azs: [z1]
+  instances: 1
+  vm_type: default
+  stemcell: default
+  persistent_disk: 10240
+  networks:
+  - name: default
+  jobs:
+  - name: postgres
+    release: postgres
+    properties:
+      databases:
+        databases:
+        - name: juicefs
+        roles:
+        - name: juicefs
+          password: ((juicefs_postgres_password))
+
+- name: blobstore
+  azs: [z1]
+  instances: 1
+  vm_type: default
+  stemcell: default
+  persistent_disk: 10240
+  networks:
+  - name: default
+  jobs:
+  - name: bpm
+    release: bpm
+  - name: blobstore
+    release: juicefs
+    properties:
+      blobstore:
+        admin_users:
+        - username: juicefs
+          password: ((juicefs_blobstore_password))
+        tls:
+          cert: ((juicefs_blobstore_tls_san.certificate))
+          private_key: ((juicefs_blobstore_tls_san.private_key))
+
+- name: verify-backends
+  azs: [z1]
+  lifecycle: errand
+  instances: 1
+  vm_type: default
+  stemcell: default
+  networks:
+  - name: default
+  jobs:
+  - name: verify-backends
+    release: juicefs
+    consumes:
+      postgres: {from: postgres, ip_addresses: true}
+      blobstore: {from: blobstore, ip_addresses: true}
+
+- name: format-volume
+  azs: [z1]
+  lifecycle: errand
+  instances: 1
+  vm_type: default
+  stemcell: default
+  networks:
+  - name: default
+  jobs:
+  - name: format-volume
+    release: juicefs
+    consumes:
+      postgres: {from: postgres, ip_addresses: true}
+      blobstore: {from: blobstore, ip_addresses: true}
+
+- name: juicefs-volume
+  azs: [z1]
+  # Enable after the BPM/FUSE device access issue is resolved on the test stemcell.
+  instances: 0
+  vm_type: default
+  stemcell: default
+  networks:
+  - name: default
+  jobs:
+  - name: bpm
+    release: bpm
+  - name: juicefs-volume
+    release: juicefs
+    consumes:
+      postgres: {from: postgres, ip_addresses: true}
+      blobstore: {from: blobstore, ip_addresses: true}
+
+variables:
+- name: juicefs_postgres_password
+  type: password
+- name: juicefs_blobstore_password
+  type: password
+- name: juicefs_blobstore_tls_san
+  type: certificate
+  update_mode: converge
+  options:
+    is_ca: true
+    common_name: blobstore.service.cf.internal
+    alternative_names:
+    - blobstore.service.cf.internal
+    - blobstore.juicefs.internal

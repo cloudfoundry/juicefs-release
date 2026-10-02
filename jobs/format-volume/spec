@@ -1,0 +1,17 @@
+---
+name: format-volume
+description: Initializes the JuiceFS metadata and WebDAV objects once; subsequent runs do not update an existing volume.
+templates:
+  run.erb: bin/run
+  config.json.erb: config/config.json
+packages:
+- juicefs
+consumes:
+- name: postgres
+  type: database
+- name: blobstore
+  type: webdav
+properties:
+  juicefs.volume.name:
+    description: Name of the volume to initialize.
+    default: juicefs-poc

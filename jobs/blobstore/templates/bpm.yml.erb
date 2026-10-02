@@ -1,0 +1,18 @@
+---
+processes:
+- name: nginx
+  executable: /var/vcap/packages/nginx_webdav/sbin/nginx
+  args:
+  - -p
+  - /var/vcap/data/blobstore/
+  - -e
+  - /var/vcap/sys/log/blobstore/error.log
+  - -c
+  - /var/vcap/jobs/blobstore/config/nginx.conf
+  - -g
+  - 'daemon off;'
+  ephemeral_disk: true
+  persistent_disk: true
+  additional_volumes:
+  - path: /var/vcap/store/juicefs-blobstore
+    writable: true

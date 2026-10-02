@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+install -d -m 0755 <%= p('juicefs.volume.mount_point') %>
+install -d -m 0700 /var/vcap/data/juicefs-volume/cache
+test -c /dev/fuse

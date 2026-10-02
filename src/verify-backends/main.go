@@ -1,0 +1,126 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+)
+
+type config struct {
+	Postgres struct {
+		Host, Port, Database, User, Password string
+	} `json:"postgres"`
+	Blobstore struct {
+		Host, Port, User, Password, Certificate string
+	} `json:"blobstore"`
+}
+
+func request(client *http.Client, method, url, user, password, body string, want ...int) error {
+	req, err := http.NewRequest(method, url, strings.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.SetBasicAuth(user, password)
+	if method == "PROPFIND" {
+		req.Header.Set("Depth", "0")
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	fmt.Printf("%s %s: %d\n", method, req.URL.Path, resp.StatusCode)
+	for _, code := range want {
+		if resp.StatusCode == code {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s %s returned %d (expected %v)", method, req.URL.Path, resp.StatusCode, want)
+}
+
+func run(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var cfg config
+	if err = json.Unmarshal(data, &cfg); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	db, err := pgx.Connect(ctx, fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", cfg.Postgres.User, cfg.Postgres.Password, cfg.Postgres.Host, cfg.Postgres.Port, cfg.Postgres.Database))
+	if err != nil {
+		return fmt.Errorf("postgres connection: %w", err)
+	}
+	defer db.Close(context.Background())
+	var result int
+	if err = db.QueryRow(ctx, "SELECT 1").Scan(&result); err != nil || result != 1 {
+		return fmt.Errorf("postgres SELECT 1: %v (result %d)", err, result)
+	}
+	fmt.Println("Postgres SELECT 1: OK")
+
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM([]byte(cfg.Blobstore.Certificate)) {
+		return fmt.Errorf("invalid blobstore TLS certificate")
+	}
+	block, _ := pem.Decode([]byte(cfg.Blobstore.Certificate))
+	if block == nil {
+		return fmt.Errorf("blobstore certificate is not PEM")
+	}
+	client := &http.Client{Timeout: 15 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{
+		// The instant-bosh config server issues a legacy CN-only certificate.
+		// Verify validity and the chain, then pin the exact certificate from the link.
+		InsecureSkipVerify: true,
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			if len(cs.PeerCertificates) == 0 || !bytes.Equal(cs.PeerCertificates[0].Raw, block.Bytes) {
+				return fmt.Errorf("blobstore certificate does not match the linked certificate")
+			}
+			_, err := cs.PeerCertificates[0].Verify(x509.VerifyOptions{Roots: pool, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}})
+			return err
+		},
+	}}}
+	base := fmt.Sprintf("https://%s:%s/admin/", cfg.Blobstore.Host, cfg.Blobstore.Port)
+	if err = request(client, "PROPFIND", base, cfg.Blobstore.User, cfg.Blobstore.Password, "", 207); err != nil {
+		return err
+	}
+	// A unique path avoids touching other objects. DELETE runs even if GET fails.
+	objectPath := fmt.Sprintf("%sjuicefs-verification-%d", base, time.Now().UnixNano())
+	if err = request(client, "PUT", objectPath, cfg.Blobstore.User, cfg.Blobstore.Password, "juicefs-verification", 201, 204); err != nil {
+		return err
+	}
+	defer request(client, "DELETE", objectPath, cfg.Blobstore.User, cfg.Blobstore.Password, "", 204)
+	if err = request(client, "GET", objectPath, cfg.Blobstore.User, cfg.Blobstore.Password, "", 200); err != nil {
+		return err
+	}
+	dir := objectPath + "-dir/"
+	if err = request(client, "MKCOL", dir, cfg.Blobstore.User, cfg.Blobstore.Password, "", 201); err != nil {
+		return fmt.Errorf("WebDAV directory creation: %w", err)
+	}
+	defer request(client, "DELETE", dir, cfg.Blobstore.User, cfg.Blobstore.Password, "", 204)
+	fmt.Println("WebDAV backend: compatible with basic JuiceFS operations")
+	return nil
+}
+
+func main() {
+	if len(os.Args) != 2 {
+		fmt.Fprintln(os.Stderr, "usage: verify-backends CONFIG.json")
+		os.Exit(2)
+	}
+	if err := run(os.Args[1]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}

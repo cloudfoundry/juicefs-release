@@ -1,0 +1,5 @@
+check process juicefs_volume
+  with pidfile /var/vcap/sys/run/bpm/juicefs-volume/mount.pid
+  start program "/var/vcap/jobs/bpm/bin/bpm start juicefs-volume -p mount"
+  stop program "/var/vcap/jobs/bpm/bin/bpm stop juicefs-volume -p mount"
+  group vcap

@@ -1,0 +1,30 @@
+pid /var/vcap/data/blobstore/juicefs-nginx.pid;
+error_log /var/vcap/sys/log/blobstore/error.log;
+
+events {
+  worker_connections 1024;
+}
+
+http {
+  access_log /var/vcap/sys/log/blobstore/access.log;
+  client_body_temp_path /var/vcap/data/blobstore/client_body_temp;
+  client_max_body_size 0;
+
+  server {
+    listen <%= p('blobstore.port') %> ssl;
+    ssl_certificate /var/vcap/jobs/blobstore/ssl/tls.crt;
+    ssl_certificate_key /var/vcap/jobs/blobstore/ssl/tls.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    location /admin/ {
+      auth_basic "JuiceFS Blobstore";
+      auth_basic_user_file /var/vcap/jobs/blobstore/config/users;
+
+      alias /var/vcap/store/juicefs-blobstore/;
+      dav_methods PUT DELETE MKCOL COPY MOVE;
+      dav_ext_methods PROPFIND OPTIONS;
+      dav_access user:rw group:rw all:r;
+      create_full_put_path on;
+    }
+  }
+}

@@ -1,0 +1,5 @@
+name: juicefs
+blobstore:
+  provider: local
+  options:
+    blobstore_path: final_blobs

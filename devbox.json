@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.17.5/.schema/devbox.schema.json",
+  "packages": ["go@1.25", "git@latest", "openssl@latest"],
+  "shell": {
+    "init_hook": [
+      "echo 'Welcome to devbox!' > /dev/null"
+    ],
+    "scripts": {
+      "deploy": [
+        "bash -euo pipefail -c 'set -a; source ./bosh.env; set +a; bosh create-release --force && bosh upload-release && bosh -n -d juicefs deploy manifests/juicefs.yml'"
+      ],
+      "vendor-go": [
+        "bash -euo pipefail -c 'cd src/juicefs; go mod vendor; mkdir -p ../juicefs-deps; rm -rf ../juicefs-deps/vendor; mv vendor ../juicefs-deps/vendor'"
+      ]
+    }
+  }
+}

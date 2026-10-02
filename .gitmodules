@@ -1,0 +1,3 @@
+[submodule "src/juicefs"]
+	path = src/juicefs
+	url = https://github.com/juicedata/juicefs.git

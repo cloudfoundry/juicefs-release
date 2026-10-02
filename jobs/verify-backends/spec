@@ -1,0 +1,14 @@
+---
+name: verify-backends
+description: Checks Postgres credentials and the JuiceFS blobstore WebDAV methods without formatting a volume.
+templates:
+  run.erb: bin/run
+  config.json.erb: config/config.json
+packages:
+- juicefs
+consumes:
+- name: postgres
+  type: database
+- name: blobstore
+  type: webdav
+properties: {}

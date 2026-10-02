@@ -1,0 +1,14 @@
+<%
+  require 'json'
+  db = link('postgres')
+  blob = link('blobstore')
+  role = db.p('databases.roles').find { |r| r['name'] == 'juicefs' }
+  raise 'missing juicefs database role' unless role
+  user = blob.p('blobstore.admin_users').find { |u| u['username'] == 'juicefs' }
+  raise 'missing juicefs blobstore user' unless user
+  config = {
+    postgres: {host: db.instances.first.address, port: db.p('databases.port').to_s, database: 'juicefs', user: role['name'], password: role['password']},
+    blobstore: {host: blob.instances.first.address, port: blob.p('blobstore.port').to_s, user: user['username'], password: user['password'], certificate: blob.p('blobstore.tls.cert')},
+    volume: {name: p('juicefs.volume.name'), mountPoint: p('juicefs.volume.mount_point'), cacheDir: '/var/vcap/data/juicefs-volume/cache'}
+  }
+%><%= JSON.generate(config) %>

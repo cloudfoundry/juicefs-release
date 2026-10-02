@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -e -x
+
+source /var/vcap/packages/golang-1.25-linux/bosh/compile.env
+export GOPROXY=off
+export GOSUMDB=off
+export GOTOOLCHAIN=local
+export GOFLAGS=-mod=vendor
+
+cd "${BOSH_COMPILE_TARGET}/juicefs"
+ln -s "${BOSH_COMPILE_TARGET}/juicefs-deps/vendor" vendor
+cp -a "${BOSH_COMPILE_TARGET}/verify-backends" ./verify-backends
+cp -a "${BOSH_COMPILE_TARGET}/juicefs-service" ./juicefs-service
+mkdir -p "${BOSH_INSTALL_TARGET}/bin"
+CGO_ENABLED=1 go build -trimpath -ldflags='-s -w' -o "${BOSH_INSTALL_TARGET}/bin/juicefs" .
+CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "${BOSH_INSTALL_TARGET}/bin/verify-backends" ./verify-backends
+CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "${BOSH_INSTALL_TARGET}/bin/juicefs-service" ./juicefs-service

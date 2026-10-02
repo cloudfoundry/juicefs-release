@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+install -d -m 0770 -o vcap -g vcap /var/vcap/store/juicefs-blobstore
+install -d -m 0770 -o vcap -g vcap /var/vcap/data/blobstore
+install -d -m 0770 -o vcap -g vcap /var/vcap/data/blobstore/client_body_temp
+install -d -o vcap -g vcap /var/vcap/sys/log/blobstore

@@ -1,0 +1,5 @@
+check process blobstore_nginx
+  with pidfile /var/vcap/sys/run/bpm/blobstore/nginx.pid
+  start program "/var/vcap/jobs/bpm/bin/bpm start blobstore -p nginx"
+  stop program "/var/vcap/jobs/bpm/bin/bpm stop blobstore -p nginx"
+  group vcap

@@ -1,0 +1,22 @@
+---
+name: juicefs-volume
+description: Mounts an existing JuiceFS volume via FUSE in a BPM process.
+templates:
+  bpm.yml.erb: config/bpm.yml
+  config.json.erb: config/config.json
+  pre-start.erb: bin/pre-start
+  mount: bin/mount
+packages:
+- juicefs
+consumes:
+- name: postgres
+  type: database
+- name: blobstore
+  type: webdav
+properties:
+  juicefs.volume.name:
+    description: Name of the preformatted shared volume.
+    default: juicefs-poc
+  juicefs.volume.mount_point:
+    description: FUSE mountpoint intended to be shared with the host by BPM.
+    default: /var/vcap/data/juicefs-volume/mount

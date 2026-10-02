@@ -1,0 +1,29 @@
+---
+name: blobstore
+description: Singleton WebDAV object store for JuiceFS test volumes.
+templates:
+  bpm.yml.erb: config/bpm.yml
+  nginx.conf.erb: config/nginx.conf
+  pre-start: bin/pre-start
+  tls.crt.erb: ssl/tls.crt
+  tls.key.erb: ssl/tls.key
+  users.erb: config/users
+packages:
+- nginx_webdav
+provides:
+- name: blobstore
+  type: webdav
+  properties:
+  - blobstore.port
+  - blobstore.tls.cert
+  - blobstore.admin_users
+properties:
+  blobstore.port:
+    description: TLS port for the WebDAV endpoint.
+    default: 4443
+  blobstore.tls.cert:
+    description: PEM-encoded certificate for the WebDAV endpoint.
+  blobstore.tls.private_key:
+    description: PEM-encoded private key for the WebDAV endpoint.
+  blobstore.admin_users:
+    description: List of WebDAV basic-auth users (username and password).
