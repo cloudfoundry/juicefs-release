@@ -2,7 +2,8 @@
 
 A proof-of-concept [JuiceFS](https://juicefs.com/) volume service for Cloud Foundry.
 The release includes a service broker, a Diego volume driver, and a shared
-filesystem backed by PostgreSQL metadata and a persistent WebDAV object store.
+filesystem with PostgreSQL or MySQL metadata and WebDAV or S3 object storage.
+The supplied deployment uses PostgreSQL and persistent WebDAV storage.
 
 Applications can provision a directory, bind it at a chosen container path, and
 keep files across container restarts. BOSH-configurable service plans apply
@@ -17,8 +18,8 @@ Cloud Foundry CLI → Cloud Controller → JuiceFS service broker
 
 Diego cell → JuiceFS volume driver → subdirectory FUSE mount → app container
                       │
-                      ├─ PostgreSQL: shared filesystem metadata
-                      └─ HTTPS → WebDAV: persistent data blocks
+                      ├─ PostgreSQL / MySQL: shared filesystem metadata
+                      └─ WebDAV / S3: persistent data blocks
 ```
 
 The `juicefs` deployment has two singleton instance groups:
@@ -35,14 +36,16 @@ on `spec.bootstrap` when `juicefs.volume.initialize` is enabled.
 fail startup.
 
 The CF runtime-config adds a full-root mount to `control` and the volume driver
-to `compute`. Backend addresses, credentials, and certificates come from shared
-BOSH links provided by the `juicefs` deployment. Registration errands run in CF.
+to `compute`. Both consume the broker VM's shared `juicefs_mount` BOSH link for
+the filesystem name and all backend settings, credentials, and trust roots.
+The broker's volume mounter is the authoritative configuration source;
+registration errands run in CF.
 
 FUSE clients run directly under Monit so they can use the host `/dev/fuse` and
-mount namespace. Clients connect directly to
+mount namespace. In the default WebDAV setup, clients connect directly to
 `https://blobstore.service.juicefs.internal:4443/admin/`. BOSH DNS aliases resolve
 that hostname to the backend group. The server certificate has a matching SAN,
-and clients trust the separate CA supplied by the blobstore link. There is no
+and clients trust the separate CA published through the mounter's shared link. There is no
 local WebDAV proxy.
 
 When upgrading a filesystem previously formatted with the loopback endpoint,
@@ -213,6 +216,52 @@ object consumption can differ because of compression, deleted objects, and
 other filesystem overhead. Inode enforcement can lag accounting, so the limit
 is not an exact per-create admission count.
 
+## Backend configuration
+
+Configure backends only on the `juicefs-volume` job in `juicefs-broker`:
+
+```yaml
+juicefs:
+  metadata:
+    type: mysql
+    host: mysql.example.internal
+    port: 3306
+    database: juicefs
+    user: juicefs
+    password: ((mysql_password))
+    options: parseTime=true
+  storage:
+    type: s3
+    bucket: https://mybucket.s3.us-east-2.amazonaws.com
+    access_key: ((s3_access_key))
+    secret_key: ((s3_secret_key))
+    session_token: ""
+    ca_cert: ""
+```
+
+Metadata types are `postgres` and `mysql`. `options` is an optional query string
+for the upstream database driver; ports default to 5432 and 3306 respectively.
+Storage types are `webdav` and `s3`; `bucket` is the upstream JuiceFS bucket URL.
+S3-compatible services can use their appropriate HTTP(S) bucket URL. Optional
+`session_token` supports temporary credentials, and `ca_cert` supplies a custom
+PEM trust root; an empty CA uses system trust. Secrets are passed to the CLI
+through environment variables rather than command arguments.
+
+These complete property objects are published by the mounter's `juicefs_mount`
+link. CF's mount and driver consume that link directly from deployment
+`juicefs`; they have no independent backend overrides. Broker quota operations
+reuse the mounter's rendered configuration, including its metadata engine.
+
+`operations/use-mysql-s3.yml` provides an example deployment ops file with
+external backend variables. PostgreSQL/WebDAV remains the default. Provision
+the external database, object bucket, and access credentials before initializing
+a new filesystem. The bundled backend jobs are not removed by that example ops
+file. Changing properties is not a data migration: `format --no-update` does
+not rewrite an existing filesystem's storage settings or copy metadata/objects.
+
+The linked PostgreSQL/WebDAV configuration is validated on the live POC;
+MySQL/S3 support has configuration tests but has not been integration-tested.
+
 ## Verification and troubleshooting
 
 Check deployed processes and service status:
@@ -238,6 +287,7 @@ Focused broker tests can run without building the upstream JuiceFS binary:
 devbox run -- go test -race ./src/cf-volume-broker/main.go ./src/cf-volume-broker/main_test.go
 devbox run -- go test -race ./src/cf-volume-driver/main.go ./src/cf-volume-driver/main_test.go
 devbox run -- go test ./src/broker-registration/main.go ./src/broker-registration/main_test.go
+devbox run -- go test ./src/juicefs-service/main.go ./src/juicefs-service/main_test.go
 ```
 
 The deployed POC has verified provision/bind, container read/write, persistence

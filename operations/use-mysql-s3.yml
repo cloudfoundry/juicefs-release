@@ -1,0 +1,19 @@
+- type: replace
+  path: /instance_groups/name=juicefs-broker/jobs/name=juicefs-volume/properties/juicefs/metadata
+  value:
+    type: mysql
+    host: ((mysql_host))
+    port: ((mysql_port))
+    database: ((mysql_database))
+    user: ((mysql_user))
+    password: ((mysql_password))
+    options: ((mysql_options))
+- type: replace
+  path: /instance_groups/name=juicefs-broker/jobs/name=juicefs-volume/properties/juicefs/storage
+  value:
+    type: s3
+    bucket: ((s3_bucket_url))
+    access_key: ((s3_access_key))
+    secret_key: ((s3_secret_key))
+    session_token: ((s3_session_token))
+    ca_cert: ((s3_ca_cert))

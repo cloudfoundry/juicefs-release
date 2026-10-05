@@ -436,19 +436,7 @@ func applyDirectoryQuota(path string, p plan) error {
 	}
 	// Reuse the mount's rendered BOSH-link configuration, keeping secrets out
 	// of command arguments and broker instance metadata.
-	contents, err := os.ReadFile("/var/vcap/jobs/juicefs-volume/config/config.json")
-	if err != nil {
-		return err
-	}
-	var cfg struct {
-		Postgres struct{ Host, Port, Database, User, Password string }
-	}
-	if err := json.Unmarshal(contents, &cfg); err != nil {
-		return err
-	}
-	metaURL := fmt.Sprintf("postgres://%s:@%s:%s/%s?sslmode=disable", cfg.Postgres.User, cfg.Postgres.Host, cfg.Postgres.Port, cfg.Postgres.Database)
-	cmd := exec.Command("/var/vcap/packages/juicefs/bin/juicefs", "quota", "set", "--path", path, "--capacity", strconv.FormatInt(p.CapacityGiB, 10), "--inodes", strconv.FormatInt(p.Inodes, 10), metaURL)
-	cmd.Env = append(os.Environ(), "META_PASSWORD="+cfg.Postgres.Password)
+	cmd := exec.Command("/var/vcap/packages/juicefs/bin/juicefs-service", "quota", "/var/vcap/jobs/juicefs-volume/config/config.json", path, strconv.FormatInt(p.CapacityGiB, 10), strconv.FormatInt(p.Inodes, 10))
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	return cmd.Run()
 }

@@ -15,14 +15,19 @@ provides:
   properties:
   - juicefs.volume.name
   - juicefs.volume.mount_point
+  - juicefs.metadata
+  - juicefs.storage
 consumes:
-- name: postgres
-  type: database
-  properties: [databases.port, databases.roles]
-- name: blobstore
-  type: webdav
-  properties: [blobstore.port, blobstore.admin_users, blobstore.tls.ca, blobstore.hostname]
+- name: juicefs_volume
+  type: juicefs_mount
+  optional: true
 properties:
+  juicefs.metadata:
+    description: Metadata backend with type (postgres or mysql), host, port, database, user, password and optional connection options. Set only on the provider mounter; consumers use juicefs_volume.
+    default: {}
+  juicefs.storage:
+    description: Object backend with type (webdav or s3), bucket URL, access_key, secret_key, optional session_token and ca_cert. Set only on the provider mounter.
+    default: {}
   juicefs.volume.name:
     description: Name of the shared volume.
     default: juicefs-poc

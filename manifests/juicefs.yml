@@ -38,6 +38,9 @@ addons:
     release: bosh-dns-aliases
     properties:
       aliases:
+      - domain: postgres.service.juicefs.internal
+        targets:
+        - {query: '*', instance_group: juicefs-backends, deployment: juicefs, network: default, domain: bosh}
       - domain: blobstore.service.juicefs.internal
         targets:
         - {query: '*', instance_group: juicefs-backends, deployment: juicefs, network: default, domain: bosh}
@@ -107,11 +110,24 @@ instance_groups:
       juicefs:
         volume:
           initialize: true
+        metadata:
+          type: postgres
+          host: postgres.service.juicefs.internal
+          port: 5432
+          database: juicefs
+          user: juicefs
+          password: ((juicefs_postgres_password))
+          options: sslmode=disable
+        storage:
+          type: webdav
+          bucket: https://blobstore.service.juicefs.internal:4443/admin/
+          access_key: juicefs
+          secret_key: ((juicefs_blobstore_password))
+          ca_cert: ((juicefs_blobstore_ca.certificate))
     provides:
       juicefs_mount: {shared: true}
     consumes:
-      postgres: {from: postgres, ip_addresses: true}
-      blobstore: {from: blobstore, ip_addresses: true}
+      juicefs_volume: nil
   - name: juicefs-broker
     release: juicefs
     provides:

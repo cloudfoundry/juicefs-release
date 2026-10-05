@@ -109,10 +109,13 @@ plan. The broker's instance metadata lives on JuiceFS, not on its ephemeral disk
 and defines registration/deregistration errands. The CF deployment is separate
 from the JuiceFS deployment. The JuiceFS deployment marks Postgres, WebDAV, the
 full-root mountpoint, and broker as shared link providers. The CF runtime-config
-explicitly consumes those links from deployment `juicefs`. The CF
-`juicefs-volume` mount and Diego driver are link-only; the colocated JuiceFS
-broker consumes its mountpoint link. Do not replace the shared links with inline
-backend credentials.
+consumes the broker mounter's shared `juicefs_mount` link from deployment
+`juicefs`. That mounter is authoritative for `juicefs.metadata` (postgres or
+mysql), `juicefs.storage` (webdav or s3), and the filesystem name. The CF mount
+and Diego driver are link-only, with no independent backend overrides. Quota
+commands reuse the mounter's rendered configuration. The colocated broker
+consumes its mountpoint link. `operations/use-mysql-s3.yml` shows external
+backend configuration; changing properties does not migrate existing data.
 
 The runtime-config is `runtime-config/juicefs-volume-driver.yml`. It targets the
 live `control` group for the full-root mount and `compute` for the isolated

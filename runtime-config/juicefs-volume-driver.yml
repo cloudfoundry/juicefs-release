@@ -11,8 +11,7 @@ addons:
   - name: juicefs-volume
     release: juicefs
     consumes:
-      postgres: {from: postgres, deployment: juicefs, ip_addresses: true}
-      blobstore: {from: blobstore, deployment: juicefs, ip_addresses: true}
+      juicefs_volume: {from: juicefs_mount, deployment: juicefs}
 - name: juicefs-volume-driver
   include:
     deployments: [cf]
@@ -21,10 +20,4 @@ addons:
   - name: juicefs-volume-driver
     release: juicefs
     consumes:
-      postgres: {from: postgres, deployment: juicefs, ip_addresses: true}
-      blobstore: {from: blobstore, deployment: juicefs, ip_addresses: true}
-      juicefs_volume: {from: juicefs_mount, deployment: cf}
-    properties:
-      juicefs:
-        volume:
-          name: juicefs-poc
+      juicefs_volume: {from: juicefs_mount, deployment: juicefs}

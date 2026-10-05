@@ -8,6 +8,12 @@
   path: /instance_groups/name=control/jobs/name=cloud_controller_ng/properties/cc/volume_services_enabled?
   value: true
 - type: replace
+  path: /addons/name=bosh-dns-aliases/jobs/name=bosh-dns-aliases/properties/aliases/domain=postgres.service.juicefs.internal?
+  value:
+    domain: postgres.service.juicefs.internal
+    targets:
+    - {query: '*', instance_group: juicefs-backends, deployment: juicefs, network: default, domain: bosh}
+- type: replace
   path: /instance_groups/name=control/jobs/name=cloud_controller_worker/properties/cc/volume_services_enabled?
   value: true
 - type: replace

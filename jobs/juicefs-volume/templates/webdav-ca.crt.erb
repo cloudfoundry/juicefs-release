@@ -1,1 +1,4 @@
-<%= link('blobstore').p('blobstore.tls.ca') %>
+<%
+  storage = p('juicefs.storage')
+  if_link('juicefs_volume') { |volume| storage = volume.p('juicefs.storage') }
+%><%= storage.fetch('ca_cert', '') %>
