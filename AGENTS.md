@@ -4,9 +4,10 @@ This is the `juicefs` BOSH release. `src/juicefs` is a pinned upstream Git submo
 `packages/juicefs` builds it with the vendored `golang-1.25-linux` BOSH package.
 `nginx_webdav` is vendored from CAPI release and powers our own singleton
 `blobstore` job; re-vendor it from `../capi-release` when upgrading CAPI's package.
-The vendored package locks live in `packages/nginx_webdav/spec.lock` and
-`packages/golang-1.25-linux/spec.lock`. Their build indexes in `.final_builds/`
-and package blobs in `final_blobs/` are local and ignored by Git.
+The vendored package locks live in `packages/nginx_webdav/spec.lock`,
+`packages/golang-1.25-linux/spec.lock`, and `packages/cf-cli-8-linux/spec.lock`.
+Their build indexes in `.final_builds/` and package blobs in `final_blobs/` are
+local and ignored by Git.
 Run `git submodule update --init --recursive` after cloning. Regenerate the local
 Go module vendor tree after changing the upstream revision (`devbox run vendor-go`).
 The vendor tree is staged under `src/juicefs-deps` so it is shipped to compilation
@@ -30,10 +31,17 @@ devbox run deploy
 ```
 
 This sources `bosh.env`, runs `bosh create-release --force`, uploads that release,
-then runs `bosh -d juicefs deploy manifests/juicefs.yml`. The manifest uses
-`version: latest` for the `juicefs` release. The director must have an
+updates the named `juicefs` runtime-config with `bosh update-config` using the
+newly built release's explicit version, deploys the JuiceFS release, then runs
+`bosh deploy -n -d cf <(bosh manifest -d cf)` so pending runtime-config changes
+are applied. The JuiceFS manifest contains
+`juicefs-backends` and `juicefs-broker` instance groups and uses `version: latest` for the
+`juicefs` release. The director must have an
 `ubuntu-noble` stemcell and cloud-config with `z1`, `default` network and
-`default` VM type. Postgres and BPM are pinned external releases. The singleton
+`default` VM type. Postgres and BPM are pinned external releases; BPM is used by
+the blobstore job. The JuiceFS FUSE client runs directly on the VM under Monit,
+not in BPM, so it can access the host `/dev/fuse` and publish its mount normally.
+The singleton
 WebDAV blobstore keeps objects on its persistent disk at
 `/var/vcap/store/juicefs-blobstore/`. The job provides a `webdav` BOSH link;
 future JuiceFS clients should consume that link rather than hardcoding an address.
@@ -42,28 +50,31 @@ the `blobstore.admin_users` and `blobstore.tls.cert` link properties provide its
 credentials and certificate. Keep `blobstore` at one instance: each instance's
 persistent disk holds separate objects, so scaling it would not create shared storage.
 
-After deploying, run `bosh -d juicefs instances --ps`, then
-`bosh -d juicefs run-errand verify-backends --keep-alive` to verify both links,
-Postgres access and WebDAV `PROPFIND`, `PUT`, `GET`, and `MKCOL` against our
-blobstore. To initialize the `juicefs-poc` volume once, run
-`bosh -d juicefs run-errand format-volume --keep-alive`. This is idempotent:
-`juicefs format --no-update` returns without modifying an existing format.
 JuiceFS metadata lives in Postgres, data blocks live in the WebDAV blobstore,
-and each mount has its own ephemeral local cache. All mounts of this volume
+and the singleton mount initializes missing metadata using `format --no-update`
+in `pre-start` on `spec.bootstrap` before mounting (`juicefs.volume.initialize: true`). Existing filesystems are
+left unchanged; backend errors fail startup. CF mounts leave initialization
+disabled. Initialization cannot use `post-start`, because BOSH requires the
+mount and broker to be healthy before running that hook.
+Each mount has its own ephemeral local cache.
+All mounts of this volume
 must use those same backends. A loopback reverse proxy on each mount VM uses
 the blobstore link's IP, credentials and pinned TLS certificate; the volume's
 stored endpoint is loopback so each client must run the proxy.
 
-`juicefs-volume` is a BPM-managed, foreground FUSE client in the release. It
-is declared with zero instances in this POC manifest while the instant-bosh
-stemcell/BPM device access is unresolved. Scaling it to two instances was tested:
-JuiceFS reached Postgres and loaded the format, but mounting failed because
-the BPM container could not open `/dev/fuse` (`operation not permitted`), even
-with `unsafe.privileged: true` and a device node created inside BPM's `/dev`.
-The host VM can open `/dev/fuse`; the failure is inside BPM. JuiceFS then tried
-the fallback `/bin/fusermount`, which is absent from this stemcell. Do not
-enable the mount instances until FUSE access and host-visible mount propagation
-have been verified on the target stemcell.
+The JuiceFS deployment runs Postgres and WebDAV in `juicefs-backends`, separately
+from the broker and full-root `juicefs-volume` mount in `juicefs-broker`.
+This allows bootstrap initialization to connect to the backends during `pre-start`.
+The CF runtime-config targets the
+live `control` group for the full-root mount and `compute` for the isolated
+volume driver. `juicefs-volume` is a foreground FUSE client managed
+directly by Monit. Its
+launcher checks the host `/dev/fuse` device and logs under
+`/var/vcap/sys/log/juicefs-volume/`. JuiceFS enables go-fuse direct mounting, so
+it opens `/dev/fuse` and mounts without requiring `fusermount`. The earlier BPM-based attempt
+failed to open `/dev/fuse` inside the container (`operation not permitted`);
+running outside BPM avoids that isolated device namespace and makes the mount
+visible in the host mount namespace.
 The certificate variable uses `update_mode: converge` so a config server can
 regenerate it when generation options change. This option is not honored when
 using a local `--vars-store` with `bosh create-env`.
@@ -77,3 +88,31 @@ by the blobstore link. The earlier CAPI blobstore job returned HTTP 405 for
 vendored `nginx_webdav` package.
 On the deployed POC, `verify-backends` exits 0: Postgres `SELECT 1`, WebDAV
 `PROPFIND`, `PUT`, `GET`, `MKCOL`, and cleanup `DELETE` all succeed.
+
+## Cloud Foundry volume service POC
+
+`operations/enable-juicefs-cf-volume-service.yml` enables CAPI volume services
+and defines registration/deregistration errands. The CF deployment is separate
+from the JuiceFS deployment. The JuiceFS deployment marks Postgres, WebDAV, the
+full-root mountpoint, and broker as shared link providers. The CF runtime-config
+explicitly consumes those links from deployment `juicefs`. The CF
+`juicefs-volume` mount and Diego driver are link-only; the colocated JuiceFS
+broker consumes its mountpoint link. Do not replace the shared links with inline
+backend credentials.
+
+The runtime-config is `runtime-config/juicefs-volume-driver.yml`. It targets the
+live `control` group for the full-root mount and `compute` for the isolated
+volume driver. Broker registration errands consume the shared broker link. The
+broker provisions
+directories beneath `/cf-volumes/<service-instance-guid>`; each cell mount uses
+JuiceFS `--subdir` for only that directory. This view restriction is not strong
+isolation against hostile users who can access shared backend credentials.
+The broker-registration errands currently use the configured CF admin
+credential; replace that with a dedicated account authorized to manage service
+brokers and service access before using this POC beyond a test environment.
+
+Build and validate from this release root with `bosh create-release --force`,
+then interpolate the CF manifest with the ops file and the runtime-config with
+the required backend variables. After applying both to the director,
+run `register-juicefs-broker`, then verify CAPI provision/bind and app-container
+read/write/unmount behavior before relying on deprovision cleanup.
