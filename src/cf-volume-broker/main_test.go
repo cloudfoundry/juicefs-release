@@ -71,6 +71,55 @@ func TestInstancePathRejectsTraversalAndMalformedIDs(t *testing.T) {
 	}
 }
 
+func TestBindingMountParameter(t *testing.T) {
+	b := &broker{root: t.TempDir()}
+	if err := os.MkdirAll(filepath.Join(b.root, "cf-volumes", testInstanceID), 0770); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, parameters, wantPath string
+		wantStatus                 int
+	}{
+		{"default", `{}`, "/var/vcap/data/" + testInstanceID, http.StatusCreated},
+		{"custom", `{"mount":"/data"}`, "/data", http.StatusCreated},
+		{"relative", `{"mount":"data"}`, "", http.StatusBadRequest},
+		{"root", `{"mount":"/"}`, "", http.StatusBadRequest},
+		{"traversal", `{"mount":"/data/../etc"}`, "", http.StatusBadRequest},
+		{"empty", `{"mount":""}`, "", http.StatusBadRequest},
+		{"null", `{"mount":null}`, "", http.StatusBadRequest},
+		{"wrong type", `{"mount":42}`, "", http.StatusBadRequest},
+		{"control", `{"mount":"/data\n"}`, "", http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodPut, "/", bytes.NewBufferString(`{"app_guid":"app-guid","parameters":`+tc.parameters+`}`))
+			r.SetPathValue("id", testInstanceID)
+			w := httptest.NewRecorder()
+			b.bind(w, r)
+			if w.Code != tc.wantStatus {
+				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+			}
+			if w.Code == http.StatusCreated {
+				var response struct {
+					VolumeMounts []struct {
+						ContainerDir string `json:"container_dir"`
+						Device       struct {
+							VolumeID    string            `json:"volume_id"`
+							MountConfig map[string]string `json:"mount_config"`
+						} `json:"device"`
+					} `json:"volume_mounts"`
+				}
+				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+					t.Fatal(err)
+				}
+				mount := response.VolumeMounts[0]
+				if mount.ContainerDir != tc.wantPath || mount.Device.VolumeID != testInstanceID || mount.Device.MountConfig["subdir"] != "/cf-volumes/"+testInstanceID {
+					t.Fatalf("unexpected mount: %+v", mount)
+				}
+			}
+		})
+	}
+}
+
 func TestInstanceDirectoryOwnershipAndRepeatedProvision(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cf-volumes", testInstanceID)
 	if err := createInstanceDirectory(path, os.Getuid(), os.Getgid()); err != nil {

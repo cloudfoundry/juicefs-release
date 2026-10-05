@@ -105,7 +105,12 @@ live `control` group for the full-root mount and `compute` for the isolated
 volume driver. Broker registration errands consume the shared broker link. The
 broker provisions
 directories beneath `/cf-volumes/<service-instance-guid>`; each cell mount uses
-JuiceFS `--subdir` for only that directory. This view restriction is not strong
+JuiceFS `--subdir` for only that directory. Bindings are synchronous and stateless,
+with `bindings_retrievable: false`; binding retrieval is not implemented.
+The optional binding parameter `mount` selects a clean absolute container path
+(for example, `cf bind-service cf-env foobar -c '{"mount":"/data"}'`). Without it,
+the path is `/var/vcap/data/<service-instance-guid>`. Cloud Controller stores the
+returned mount instructions. This view restriction is not strong
 isolation against hostile users who can access shared backend credentials.
 The broker-registration errands currently use the configured CF admin
 credential; replace that with a dedicated account authorized to manage service

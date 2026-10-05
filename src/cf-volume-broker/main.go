@@ -47,9 +47,10 @@ type config struct {
 }
 
 type request struct {
-	ServiceID    string `json:"service_id"`
-	PlanID       string `json:"plan_id"`
-	AppGUID      string `json:"app_guid"`
+	ServiceID    string                     `json:"service_id"`
+	PlanID       string                     `json:"plan_id"`
+	AppGUID      string                     `json:"app_guid"`
+	Parameters   map[string]json.RawMessage `json:"parameters"`
 	BindResource struct {
 		AppGUID string `json:"app_guid"`
 	} `json:"bind_resource"`
@@ -104,7 +105,6 @@ func main() {
 	mux.HandleFunc("PUT /v2/service_instances/{id}/service_bindings/{binding}", b.auth(b.bind))
 	mux.HandleFunc("DELETE /v2/service_instances/{id}/service_bindings/{binding}", b.auth(b.unbind))
 	mux.HandleFunc("GET /v2/service_instances/{id}", b.auth(b.getInstance))
-	mux.HandleFunc("GET /v2/service_instances/{id}/service_bindings/{binding}", b.auth(b.getBinding))
 
 	addr := cfg.Broker.ListenAddr
 	if addr == "" {
@@ -166,7 +166,8 @@ func (b *broker) catalog(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"services": []any{map[string]any{
 		"id": serviceID, "name": "juicefs", "description": "Dynamically provisioned JuiceFS directories", "bindable": true,
 		"plan_updateable": false, "requires": []string{"volume_mount"}, "tags": []string{"filesystem", "juicefs"},
-		"plans": []any{map[string]any{"id": planID, "name": "shared", "description": "Shared JuiceFS directory", "free": true}},
+		"bindings_retrievable": false,
+		"plans":                []any{map[string]any{"id": planID, "name": "shared", "description": "Shared JuiceFS directory", "free": true}},
 	}}})
 }
 
@@ -300,10 +301,19 @@ func (b *broker) bind(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "app_guid is required")
 		return
 	}
+	containerDir := filepath.Join("/var/vcap/data", id)
+	if mount, ok := req.Parameters["mount"]; ok {
+		var path *string
+		if err := json.Unmarshal(mount, &path); err != nil || path == nil || !filepath.IsAbs(*path) || *path == "/" || filepath.Clean(*path) != *path || strings.ContainsAny(*path, "\x00\r\n\t") {
+			writeError(w, http.StatusBadRequest, "mount must be a clean, absolute, non-root container path")
+			return
+		}
+		containerDir = *path
+	}
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"credentials": map[string]any{},
 		"volume_mounts": []any{map[string]any{
-			"driver": driver, "container_dir": filepath.Join("/var/vcap/data", id), "mode": "rw", "device_type": "shared",
+			"driver": driver, "container_dir": containerDir, "mode": "rw", "device_type": "shared",
 			"device": map[string]any{"volume_id": id, "mount_config": map[string]string{"subdir": "/cf-volumes/" + id}},
 		}},
 	})
@@ -320,25 +330,6 @@ func (b *broker) getInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"service_id": serviceID, "plan_id": planID})
-}
-
-func (b *broker) getBinding(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	path, err := b.instancePath(id)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if _, err := os.Stat(path); err != nil {
-		writeError(w, http.StatusNotFound, "service instance directory does not exist")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"credentials": map[string]any{}, "volume_mounts": []any{map[string]any{
-		"driver": driver, "container_dir": filepath.Join("/var/vcap/data", id), "mode": "rw", "device_type": "shared",
-		"device": map[string]any{"volume_id": id, "mount_config": map[string]any{"subdir": "/cf-volumes/" + id}},
-	}}})
 }
 
 func serviceInstanceExists(root, id string) bool {
