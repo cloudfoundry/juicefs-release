@@ -58,9 +58,12 @@ disabled. Initialization cannot use `post-start`, because BOSH requires the
 mount and broker to be healthy before running that hook.
 Each mount has its own ephemeral local cache.
 All mounts of this volume
-must use those same backends. A loopback reverse proxy on each mount VM uses
-the blobstore link's IP, credentials and pinned TLS certificate; the volume's
-stored endpoint is loopback so each client must run the proxy.
+must use those same backends. Clients connect directly to
+`https://blobstore.service.juicefs.internal:4443/admin/`, resolved using BOSH DNS
+aliases targeting `juicefs-backends`. A separate CA signs the server certificate
+with a matching DNS SAN; the linked CA is rendered to each client and passed via
+`SSL_CERT_FILE`. The filesystem's stored endpoint was migrated from loopback
+using `juicefs config --bucket`; no local WebDAV proxy is needed.
 
 The JuiceFS deployment runs Postgres and WebDAV in `juicefs-backends`, separately
 from the broker and full-root `juicefs-volume` mount in `juicefs-broker`.
@@ -79,11 +82,10 @@ The certificate variable uses `update_mode: converge` so a config server can
 regenerate it when generation options change. This option is not honored when
 using a local `--vars-store` with `bosh create-env`.
 
-The instant-bosh test director returns link DNS addresses that are not resolvable
-on its VMs, so the errand requests IP addresses from both links. Its config server
-currently issues a legacy CN-only blobstore certificate even with SAN options;
-the errand verifies the certificate chain and pins the exact certificate provided
-by the blobstore link. The earlier CAPI blobstore job returned HTTP 405 for
+Postgres consumers request IP addresses from their links. WebDAV uses the stable
+DNS alias and normal CA/hostname verification. The previous self-signed CA-style
+blobstore certificate lacked SANs; a separate CA and server certificate fixed
+generation, and BOSH DNS is now installed on JuiceFS VMs. The earlier CAPI blobstore job returned HTTP 405 for
 `MKCOL`; that is why this release provides its own WebDAV job using CAPI's
 vendored `nginx_webdav` package.
 On the deployed POC, `verify-backends` exits 0: Postgres `SELECT 1`, WebDAV

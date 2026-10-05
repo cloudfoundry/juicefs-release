@@ -6,6 +6,7 @@ templates:
   pre-start.erb: bin/pre-start
   ctl.erb: bin/ctl
   mount: bin/mount
+  webdav-ca.crt.erb: config/webdav-ca.crt
 packages:
 - juicefs
 provides:
@@ -20,7 +21,7 @@ consumes:
   properties: [databases.port, databases.roles]
 - name: blobstore
   type: webdav
-  properties: [blobstore.port, blobstore.admin_users, blobstore.tls.cert]
+  properties: [blobstore.port, blobstore.admin_users, blobstore.tls.ca, blobstore.hostname]
 properties:
   juicefs.volume.name:
     description: Name of the shared volume.

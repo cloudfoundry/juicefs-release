@@ -9,6 +9,6 @@
   require 'json'
   config = {
     postgres: {host: db.instances.first.address, port: db.p('databases.port').to_s, database: 'juicefs', user: role['name'], password: role['password']},
-    blobstore: {host: blob.instances.first.address, port: blob.p('blobstore.port').to_s, user: user['username'], password: user['password'], certificate: blob.p('blobstore.tls.cert')}
+    blobstore: {host: blob.p('blobstore.hostname'), port: blob.p('blobstore.port').to_s, user: user['username'], password: user['password'], ca: blob.p('blobstore.tls.ca')}
   }
 %><%= JSON.generate(config) %>

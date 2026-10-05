@@ -16,8 +16,15 @@ provides:
   properties:
   - blobstore.port
   - blobstore.tls.cert
+  - blobstore.tls.ca
+  - blobstore.hostname
   - blobstore.admin_users
 properties:
+  blobstore.hostname:
+    description: Stable DNS alias for the WebDAV endpoint, matching its certificate SAN.
+    default: blobstore.service.juicefs.internal
+  blobstore.tls.ca:
+    description: PEM-encoded CA certificate signing the WebDAV server certificate.
   blobstore.port:
     description: TLS port for the WebDAV endpoint.
     default: 4443

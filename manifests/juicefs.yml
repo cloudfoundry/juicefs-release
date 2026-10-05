@@ -12,6 +12,35 @@ releases:
   version: '1.4.41'
   url: https://bosh.io/d/github.com/cloudfoundry/bpm-release?v=1.4.41
   sha1: sha256:7b445508d63d2171d892ba33f836087e1e519b9782f44c5fa5290323616ca8e6
+- name: bosh-dns
+  version: 1.39.30
+- name: bosh-dns-aliases
+  version: 0.0.4
+
+addons:
+- name: juicefs-dns
+  jobs:
+  - name: bosh-dns
+    release: bosh-dns
+    properties:
+      configure_systemd_resolved: true
+      override_nameserver: false
+      disable_recursors: true
+      cache: {enabled: true}
+      api:
+        client: {tls: ((/dns_api_client_tls))}
+        server: {tls: ((/dns_api_server_tls))}
+      health:
+        enabled: true
+        client: {tls: ((/dns_healthcheck_client_tls))}
+        server: {tls: ((/dns_healthcheck_server_tls))}
+  - name: bosh-dns-aliases
+    release: bosh-dns-aliases
+    properties:
+      aliases:
+      - domain: blobstore.service.juicefs.internal
+        targets:
+        - {query: '*', instance_group: juicefs-backends, deployment: juicefs, network: default, domain: bosh}
 
 stemcells:
 - alias: default
@@ -57,8 +86,10 @@ instance_groups:
         - username: juicefs
           password: ((juicefs_blobstore_password))
         tls:
-          cert: ((juicefs_blobstore_tls_san.certificate))
-          private_key: ((juicefs_blobstore_tls_san.private_key))
+          cert: ((juicefs_blobstore_server_tls.certificate))
+          private_key: ((juicefs_blobstore_server_tls.private_key))
+          ca: ((juicefs_blobstore_ca.certificate))
+        hostname: blobstore.service.juicefs.internal
 - name: juicefs-broker
   migrated_from:
   - name: juicefs-mount-broker
@@ -111,12 +142,17 @@ variables:
   type: password
 - name: juicefs_blobstore_password
   type: password
-- name: juicefs_blobstore_tls_san
+- name: juicefs_blobstore_ca
+  type: certificate
+  options:
+    is_ca: true
+    common_name: juicefs-blobstore-ca
+- name: juicefs_blobstore_server_tls
   type: certificate
   update_mode: converge
   options:
-    is_ca: true
-    common_name: blobstore.service.cf.internal
+    ca: juicefs_blobstore_ca
+    common_name: blobstore.service.juicefs.internal
     alternative_names:
-    - blobstore.service.cf.internal
-    - blobstore.juicefs.internal
+    - blobstore.service.juicefs.internal
+    extended_key_usage: [server_auth]

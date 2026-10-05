@@ -18,7 +18,7 @@ Cloud Foundry CLI → Cloud Controller → JuiceFS service broker
 Diego cell → JuiceFS volume driver → subdirectory FUSE mount → app container
                       │
                       ├─ PostgreSQL: shared filesystem metadata
-                      └─ local proxy → WebDAV: persistent data blocks
+                      └─ HTTPS → WebDAV: persistent data blocks
 ```
 
 The `juicefs` deployment has two singleton instance groups:
@@ -39,9 +39,17 @@ to `compute`. Backend addresses, credentials, and certificates come from shared
 BOSH links provided by the `juicefs` deployment. Registration errands run in CF.
 
 FUSE clients run directly under Monit so they can use the host `/dev/fuse` and
-mount namespace. Each client runs a loopback WebDAV proxy; the filesystem's
-stored object endpoint refers to that proxy. The proxy verifies the certificate
-chain and pins the certificate supplied by the blobstore link.
+mount namespace. Clients connect directly to
+`https://blobstore.service.juicefs.internal:4443/admin/`. BOSH DNS aliases resolve
+that hostname to the backend group. The server certificate has a matching SAN,
+and clients trust the separate CA supplied by the blobstore link. There is no
+local WebDAV proxy.
+
+When upgrading a filesystem previously formatted with the loopback endpoint,
+first deploy DNS, the SAN certificate, and client CA trust. Update its stored
+bucket URL using `juicefs config --bucket` with the direct HTTPS endpoint and
+the linked CA in `SSL_CERT_FILE` before removing the old proxies. This changes
+the endpoint, not the filesystem UUID or stored objects.
 
 ## Prerequisites
 

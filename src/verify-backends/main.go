@@ -1,12 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,7 +20,7 @@ type config struct {
 		Host, Port, Database, User, Password string
 	} `json:"postgres"`
 	Blobstore struct {
-		Host, Port, User, Password, Certificate string
+		Host, Port, User, Password, CA string
 	} `json:"blobstore"`
 }
 
@@ -73,24 +71,11 @@ func run(path string) error {
 	fmt.Println("Postgres SELECT 1: OK")
 
 	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM([]byte(cfg.Blobstore.Certificate)) {
-		return fmt.Errorf("invalid blobstore TLS certificate")
-	}
-	block, _ := pem.Decode([]byte(cfg.Blobstore.Certificate))
-	if block == nil {
-		return fmt.Errorf("blobstore certificate is not PEM")
+	if !pool.AppendCertsFromPEM([]byte(cfg.Blobstore.CA)) {
+		return fmt.Errorf("invalid blobstore CA certificate")
 	}
 	client := &http.Client{Timeout: 15 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{
-		// The instant-bosh config server issues a legacy CN-only certificate.
-		// Verify validity and the chain, then pin the exact certificate from the link.
-		InsecureSkipVerify: true,
-		VerifyConnection: func(cs tls.ConnectionState) error {
-			if len(cs.PeerCertificates) == 0 || !bytes.Equal(cs.PeerCertificates[0].Raw, block.Bytes) {
-				return fmt.Errorf("blobstore certificate does not match the linked certificate")
-			}
-			_, err := cs.PeerCertificates[0].Verify(x509.VerifyOptions{Roots: pool, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}})
-			return err
-		},
+		RootCAs: pool,
 	}}}
 	base := fmt.Sprintf("https://%s:%s/admin/", cfg.Blobstore.Host, cfg.Blobstore.Port)
 	if err = request(client, "PROPFIND", base, cfg.Blobstore.User, cfg.Blobstore.Password, "", 207); err != nil {

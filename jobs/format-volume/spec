@@ -4,6 +4,7 @@ description: Initializes the JuiceFS metadata and WebDAV objects once; subsequen
 templates:
   run.erb: bin/run
   config.json.erb: config/config.json
+  webdav-ca.crt.erb: config/webdav-ca.crt
 packages:
 - juicefs
 consumes:

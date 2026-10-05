@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -123,49 +122,15 @@ func main() {
 		cacheRoot:  cacheRoot,
 		baseConfig: baseConfig,
 	}
-	proxyCmd := exec.Command("/var/vcap/packages/juicefs/bin/juicefs-service", "proxy", baseConfigPath)
-	proxyCmd.Stdout, proxyCmd.Stderr = os.Stdout, os.Stderr
-	if err := proxyCmd.Start(); err != nil {
-		fmt.Fprintln(os.Stderr, "start WebDAV proxy:", err)
-		os.Exit(1)
-	}
-	proxyDone := make(chan error, 1)
-	go func() { proxyDone <- proxyCmd.Wait() }()
-	if err := waitForProxy(proxyDone, 15*time.Second); err != nil {
-		shutdownProxy(proxyCmd, proxyDone)
-		log.Fatal("start WebDAV proxy:", err)
-	}
 	if err := d.load(); err != nil {
-		shutdownProxy(proxyCmd, proxyDone)
 		log.Fatal("restore driver state:", err)
 	}
 	if err := d.register(); err != nil {
-		shutdownProxy(proxyCmd, proxyDone)
 		log.Fatal("register driver:", err)
 	}
 	if err := d.recoverMounts(); err != nil {
-		shutdownProxy(proxyCmd, proxyDone)
 		log.Fatal("recover mounts:", err)
 	}
-	go func() {
-		for range time.Tick(time.Second) {
-			conn, err := net.DialTimeout("tcp", "127.0.0.1:19798", 100*time.Millisecond)
-			if err == nil {
-				_ = conn.Close()
-				continue
-			}
-			log.Printf("WebDAV proxy unavailable: %v", err)
-			if err := proxyCmd.Process.Signal(syscall.SIGTERM); err == nil {
-				select {
-				case <-proxyDone:
-				case <-time.After(2 * time.Second):
-					_ = proxyCmd.Process.Kill()
-					<-proxyDone
-				}
-			}
-			os.Exit(1)
-		}
-	}()
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /Plugin.Activate", func(w http.ResponseWriter, _ *http.Request) {
 		write(w, activateResponse{Implements: []string{"VolumeDriver"}})
@@ -204,7 +169,6 @@ func main() {
 		cancel()
 	}
 	d.unmountAll()
-	shutdownProxy(proxyCmd, proxyDone)
 }
 
 func mountWithOverrides(configPath, mountpoint, cacheDir string) error {
@@ -272,43 +236,6 @@ func runCommandUntilSignal(cmd *exec.Cmd) error {
 	case sig := <-signals:
 		_ = cmd.Process.Signal(sig)
 		return <-done
-	}
-}
-
-func waitForProxy(done <-chan error, timeout time.Duration) error {
-	deadline := time.NewTimer(timeout)
-	defer deadline.Stop()
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		conn, err := net.DialTimeout("tcp", "127.0.0.1:19798", 100*time.Millisecond)
-		if err == nil {
-			_ = conn.Close()
-			return nil
-		}
-		select {
-		case err := <-done:
-			if err == nil {
-				return errors.New("WebDAV proxy exited unexpectedly")
-			}
-			return fmt.Errorf("WebDAV proxy exited: %w", err)
-		case <-deadline.C:
-			return errors.New("timed out waiting for WebDAV proxy")
-		case <-ticker.C:
-		}
-	}
-}
-
-func shutdownProxy(cmd *exec.Cmd, done <-chan error) {
-	if cmd == nil || cmd.Process == nil {
-		return
-	}
-	_ = cmd.Process.Signal(syscall.SIGTERM)
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		_ = cmd.Process.Kill()
-		<-done
 	}
 }
 

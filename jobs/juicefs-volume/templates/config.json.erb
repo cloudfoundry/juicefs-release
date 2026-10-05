@@ -8,7 +8,7 @@
   raise 'missing JuiceFS blobstore user' unless user
   config = {
     postgres: {host: postgres.instances.first.address, port: postgres.p('databases.port').to_s, database: 'juicefs', user: role['name'], password: role['password']},
-    blobstore: {host: blob.instances.first.address, port: blob.p('blobstore.port').to_s, user: user['username'], password: user['password'], certificate: blob.p('blobstore.tls.cert')},
+    blobstore: {hostname: blob.p('blobstore.hostname'), port: blob.p('blobstore.port').to_s, user: user['username'], password: user['password'], caFile: '/var/vcap/jobs/juicefs-volume/config/webdav-ca.crt'},
     volume: {name: p('juicefs.volume.name'), mountPoint: p('juicefs.volume.mount_point'), cacheDir: '/var/vcap/data/juicefs-volume/cache', subdir: ''}
   }
 %><%= JSON.generate(config) %>

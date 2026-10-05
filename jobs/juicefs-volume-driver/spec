@@ -2,6 +2,7 @@
 name: juicefs-volume-driver
 description: Diego cell shared-volume driver mounting an isolated JuiceFS instance subdirectory.
 templates:
+  webdav-ca.crt.erb: config/webdav-ca.crt
   config.json.erb: config/config.json
   pre-start.erb: bin/pre-start
   ctl.erb: bin/ctl
@@ -14,7 +15,7 @@ consumes:
   type: database
 - name: blobstore
   type: webdav
-  properties: [blobstore.port, blobstore.admin_users, blobstore.tls.cert]
+  properties: [blobstore.port, blobstore.admin_users, blobstore.tls.ca, blobstore.hostname]
 - name: juicefs_volume
   type: juicefs_mount
   properties: [juicefs.volume.name, juicefs.volume.mount_point]
