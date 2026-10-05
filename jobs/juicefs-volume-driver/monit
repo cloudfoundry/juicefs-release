@@ -1,0 +1,5 @@
+check process juicefs_volume_driver
+  with pidfile /var/vcap/sys/run/juicefs-volume-driver/juicefs-volume-driver.pid
+  start program "/var/vcap/jobs/juicefs-volume-driver/bin/ctl start"
+  stop program "/var/vcap/jobs/juicefs-volume-driver/bin/ctl stop"
+  group vcap

@@ -1,0 +1,5 @@
+check process juicefs_broker
+  with pidfile /var/vcap/sys/run/juicefs-broker/juicefs-broker.pid
+  start program "/var/vcap/jobs/juicefs-broker/bin/ctl start"
+  stop program "/var/vcap/jobs/juicefs-broker/bin/ctl stop"
+  group vcap

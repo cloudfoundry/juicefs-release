@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+modprobe fuse || true
+install -d -m 0755 "<%= p('juicefs.driver.mount_root') %>"
+install -d -m 0700 "<%= p('juicefs.driver.cache_root') %>"
+install -d -m 0750 /var/vcap/sys/run/juicefs-volume-driver /var/vcap/sys/log/juicefs-volume-driver
+test -c /dev/fuse

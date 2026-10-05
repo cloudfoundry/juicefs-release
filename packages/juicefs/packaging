@@ -11,7 +11,14 @@ cd "${BOSH_COMPILE_TARGET}/juicefs"
 ln -s "${BOSH_COMPILE_TARGET}/juicefs-deps/vendor" vendor
 cp -a "${BOSH_COMPILE_TARGET}/verify-backends" ./verify-backends
 cp -a "${BOSH_COMPILE_TARGET}/juicefs-service" ./juicefs-service
+cp -a "${BOSH_COMPILE_TARGET}/cf-volume-broker" ./cf-volume-broker
+cp -a "${BOSH_COMPILE_TARGET}/cf-volume-driver" ./cf-volume-driver
+cp -a "${BOSH_COMPILE_TARGET}/broker-registration" ./broker-registration
 mkdir -p "${BOSH_INSTALL_TARGET}/bin"
 CGO_ENABLED=1 go build -trimpath -ldflags='-s -w' -o "${BOSH_INSTALL_TARGET}/bin/juicefs" .
 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "${BOSH_INSTALL_TARGET}/bin/verify-backends" ./verify-backends
 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "${BOSH_INSTALL_TARGET}/bin/juicefs-service" ./juicefs-service
+CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "${BOSH_INSTALL_TARGET}/bin/cf-volume-broker" ./cf-volume-broker
+CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "${BOSH_INSTALL_TARGET}/bin/cf-volume-driver" ./cf-volume-driver
+CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "${BOSH_INSTALL_TARGET}/bin/broker-registrar" ./broker-registration
+CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "${BOSH_INSTALL_TARGET}/bin/broker-deregistrar" ./broker-registration

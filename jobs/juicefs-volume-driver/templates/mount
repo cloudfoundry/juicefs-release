@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+set -euo pipefail
+exec /var/vcap/packages/juicefs/bin/juicefs-service mount "$1"

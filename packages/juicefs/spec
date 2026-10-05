@@ -7,3 +7,6 @@ files:
 - juicefs-deps/**
 - verify-backends/**/*
 - juicefs-service/**/*
+- cf-volume-broker/**/*
+- cf-volume-driver/**/*
+- broker-registration/**/*

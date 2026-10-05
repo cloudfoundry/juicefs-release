@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+RUN_DIR=/var/vcap/sys/run/juicefs-broker
+LOG_DIR=/var/vcap/sys/log/juicefs-broker
+PIDFILE=${RUN_DIR}/juicefs-broker.pid
+
+case "${1:-}" in
+  start)
+    install -d -m 0750 "$RUN_DIR" "$LOG_DIR"
+    for _ in {1..600}; do
+      if findmnt -rn -o FSTYPE --target "<%= link('juicefs_mount').p('juicefs.volume.mount_point') %>" | awk '$1 == "fuse.juicefs" { found=1 } END { exit !found }'; then break; fi
+      sleep 0.1
+    done
+    if ! findmnt -rn -o FSTYPE --target "<%= link('juicefs_mount').p('juicefs.volume.mount_point') %>" | awk '$1 == "fuse.juicefs" { found=1 } END { exit !found }'; then
+      echo 'JuiceFS root is not mounted' >&2
+      exit 1
+    fi
+    rm -f "$PIDFILE"
+    echo $$ > "$PIDFILE"
+    exec /var/vcap/packages/juicefs/bin/cf-volume-broker \
+      >> "$LOG_DIR/broker.stdout.log" 2>> "$LOG_DIR/broker.stderr.log"
+    ;;
+  stop)
+    if [ -s "$PIDFILE" ]; then
+      pid=$(<"$PIDFILE")
+      if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+        kill -TERM "$pid" 2>/dev/null || true
+      else
+        rm -f "$PIDFILE"
+      fi
+    fi
+    ;;
+  *)
+    echo "Usage: ctl {start|stop}" >&2
+    exit 2
+    ;;
+esac

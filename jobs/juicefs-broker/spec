@@ -1,0 +1,38 @@
+---
+name: juicefs-broker
+description: Stateless Cloud Foundry volume service broker with broker-local JuiceFS root access.
+templates:
+  config.json.erb: config/config.json
+  ctl.erb: bin/ctl
+  pre-start.erb: bin/pre-start
+packages:
+- juicefs
+provides:
+- name: juicefs_broker
+  type: juicefs_broker
+  properties:
+  - juicefs.broker.port
+  - juicefs.broker.username
+  - juicefs.broker.password
+consumes:
+- name: juicefs_mount
+  type: juicefs_mount
+  properties: [juicefs.volume.name, juicefs.volume.mount_point]
+properties:
+  juicefs.broker.listen_addr:
+    description: Broker listen address.
+    default: 0.0.0.0:8080
+  juicefs.broker.port:
+    description: Broker API port.
+    default: 8080
+  juicefs.broker.mount_ready_timeout:
+    description: Seconds to wait for the full JuiceFS root mount to appear.
+    default: 60
+  juicefs.broker.username:
+    description: Basic-auth username CAPI uses for broker requests.
+    default: juicefs-broker
+  juicefs.broker.password:
+    description: Basic-auth password CAPI uses for broker requests.
+  juicefs.broker.clean_empty_dirs:
+    description: Recursively remove empty parents after instance deprovision.
+    default: true

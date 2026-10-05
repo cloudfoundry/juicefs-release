@@ -1,0 +1,33 @@
+---
+name: juicefs-volume-driver
+description: Diego cell shared-volume driver mounting an isolated JuiceFS instance subdirectory.
+templates:
+  config.json.erb: config/config.json
+  pre-start.erb: bin/pre-start
+  ctl.erb: bin/ctl
+  mount: bin/mount
+  drain.erb: bin/drain
+packages:
+- juicefs
+consumes:
+- name: postgres
+  type: database
+- name: blobstore
+  type: webdav
+  properties: [blobstore.port, blobstore.admin_users, blobstore.tls.cert]
+- name: juicefs_volume
+  type: juicefs_mount
+  properties: [juicefs.volume.name, juicefs.volume.mount_point]
+properties:
+  juicefs.volume.name:
+    description: Formatted JuiceFS filesystem name.
+    default: juicefs-poc
+  juicefs.driver.mount_root:
+    description: Root directory for per-volume JuiceFS FUSE mounts on the cell.
+    default: /var/vcap/data/juicefs-volume-driver/mounts
+  juicefs.driver.cache_root:
+    description: Root directory for per-volume local caches on the cell.
+    default: /var/vcap/data/juicefs-volume-driver/cache
+  juicefs.volume.name:
+    description: Formatted JuiceFS filesystem name.
+    default: juicefs-poc

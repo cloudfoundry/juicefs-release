@@ -1,0 +1,34 @@
+---
+name: deregister-broker
+description: Deregisters the JuiceFS volume service broker from Cloud Controller.
+templates:
+  run.erb: bin/run
+  config.json.erb: config/config.json
+packages:
+- juicefs
+- cf-cli-8-linux
+consumes:
+- name: juicefs_broker
+  type: juicefs_broker
+  properties:
+  - juicefs.broker.port
+  - juicefs.broker.username
+  - juicefs.broker.password
+- name: cloud_controller_https_endpoint
+  type: cloud_controller_https_endpoint
+properties:
+  juicefs.broker.name:
+    description: Service broker registration name.
+    default: juicefs
+  juicefs.cf.username:
+    description: Cloud Controller administrator username.
+    default: admin
+  juicefs.cf.password:
+    description: Cloud Controller administrator password.
+    default: ""
+  juicefs.cf.skip_ssl_validation:
+    description: Skip Cloud Controller TLS validation.
+    default: false
+  juicefs.broker.skip_ssl_validation:
+    description: Skip TLS verification for the broker endpoint.
+    default: false

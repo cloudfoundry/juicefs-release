@@ -1,0 +1,6 @@
+<%
+  require 'json'
+  config = {
+    broker: {listenAddr: p('juicefs.broker.listen_addr'), root: link('juicefs_mount').p('juicefs.volume.mount_point'), username: p('juicefs.broker.username'), password: p('juicefs.broker.password'), mountReadyTimeout: p('juicefs.broker.mount_ready_timeout'), cleanEmptyDirs: p('juicefs.broker.clean_empty_dirs')}
+  }
+%><%= JSON.generate(config) %>

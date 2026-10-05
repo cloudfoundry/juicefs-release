@@ -1,0 +1,18 @@
+<%
+  require 'json'
+  broker = link('juicefs_broker')
+  cc = link('cloud_controller_https_endpoint')
+  config = {
+    apiURL: "https://#{cc.p('cc.internal_service_hostname')}:#{cc.p('cc.public_tls.port')}",
+    caCert: cc.p('cc.public_tls.ca_cert'),
+    brokerName: p('juicefs.broker.name'),
+    brokerURL: "http://#{broker.instances.first.ip_address}:#{broker.p('juicefs.broker.port')}",
+    brokerPort: broker.p('juicefs.broker.port'),
+    brokerUsername: broker.p('juicefs.broker.username'),
+    brokerPassword: broker.p('juicefs.broker.password'),
+    cfUsername: p('juicefs.cf.username'),
+    cfPassword: p('juicefs.cf.password'),
+    skipSSLValidation: p('juicefs.cf.skip_ssl_validation'),
+    skipBrokerSSLValidation: p('juicefs.broker.skip_ssl_validation')
+  }
+%><%= JSON.generate(config) %>

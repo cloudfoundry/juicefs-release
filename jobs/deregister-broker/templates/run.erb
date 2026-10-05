@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export CF_HOME=/var/vcap/data/deregister-broker/cf-home
+export PATH="/var/vcap/packages/cf-cli-8-linux/bin:${PATH}"
+export BROKER_REGISTRATION_CONFIG=/var/vcap/jobs/deregister-broker/config/config.json
+exec /var/vcap/packages/juicefs/bin/broker-deregistrar deregister
