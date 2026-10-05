@@ -42,6 +42,7 @@ type config struct {
 		MountReadyTimeout                               int
 		DeletionTimeout                                 int
 		CleanEmptyDirs                                  bool
+		DirectoryUID, DirectoryGID                      int
 	} `json:"broker"`
 }
 
@@ -80,9 +81,12 @@ func main() {
 
 	b := &broker{root: root, username: cfg.Broker.Username, password: cfg.Broker.Password, publicURL: cfg.Broker.PublicURL, cleanEmptyDirs: cfg.Broker.CleanEmptyDirs}
 	b.createDirectory = func(path string) error {
-		return execJuiceFS("mkdir", "-p", path)
+		return createInstanceDirectory(path, cfg.Broker.DirectoryUID, cfg.Broker.DirectoryGID)
 	}
 	b.removeDirectory = func(path string) error {
+		if _, err := os.Lstat(path); err != nil {
+			return err
+		}
 		return execJuiceFS("rmr", "--skip-trash", path)
 	}
 	mountTimeout := time.Duration(cfg.Broker.MountReadyTimeout) * time.Second
@@ -249,6 +253,24 @@ func removeEmptyParents(path, stop string) error {
 
 func removeDirectory(path string) error {
 	return os.RemoveAll(path)
+}
+
+func createInstanceDirectory(path string, uid, gid int) error {
+	if _, err := os.Lstat(path); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	if err := os.Mkdir(path, 0770); err != nil {
+		return err
+	}
+	if err := os.Chown(path, uid, gid); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0770)
 }
 
 func execJuiceFS(args ...string) error {

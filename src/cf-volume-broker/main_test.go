@@ -71,6 +71,27 @@ func TestInstancePathRejectsTraversalAndMalformedIDs(t *testing.T) {
 	}
 }
 
+func TestInstanceDirectoryOwnershipAndRepeatedProvision(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cf-volumes", testInstanceID)
+	if err := createInstanceDirectory(path, os.Getuid(), os.Getgid()); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0770 {
+		t.Fatalf("new directory mode: %v, error: %v", info, err)
+	}
+	if err := os.Chmod(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := createInstanceDirectory(path, os.Getuid(), os.Getgid()); err != nil {
+		t.Fatal(err)
+	}
+	info, _ = os.Stat(path)
+	if info.Mode().Perm() != 0700 {
+		t.Fatal("repeated provision changed existing permissions")
+	}
+}
+
 func TestBrokerAuthUsesConstantShapeCredentialCheck(t *testing.T) {
 	b := &broker{username: "broker", password: "secret"}
 	called := false

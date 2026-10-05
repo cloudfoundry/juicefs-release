@@ -19,6 +19,12 @@ consumes:
   type: juicefs_mount
   properties: [juicefs.volume.name, juicefs.volume.mount_point]
 properties:
+  juicefs.broker.directory_uid:
+    description: Host UID owning newly provisioned directories; match the cell's mapped application UID.
+    default: 2000
+  juicefs.broker.directory_gid:
+    description: Host GID owning newly provisioned directories; match the cell's mapped application GID.
+    default: 2000
   juicefs.broker.listen_addr:
     description: Broker listen address.
     default: 0.0.0.0:8080

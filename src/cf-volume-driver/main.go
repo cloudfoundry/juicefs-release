@@ -317,7 +317,7 @@ func (d *driver) register() error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
-	spec, err := json.Marshal(map[string]any{"Name": driverName, "Addr": "http://127.0.0.1:7591", "UniqueVolumeIds": true})
+	spec, err := json.Marshal(map[string]any{"Name": driverName, "Addr": "http://127.0.0.1:7591", "UniqueVolumeIds": false})
 	if err != nil {
 		return err
 	}
