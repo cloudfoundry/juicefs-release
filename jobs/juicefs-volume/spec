@@ -1,22 +1,33 @@
 ---
 name: juicefs-volume
-description: Mounts an existing JuiceFS volume via FUSE in a BPM process.
+description: Mounts the full JuiceFS root via FUSE on the broker VM.
 templates:
-  bpm.yml.erb: config/bpm.yml
   config.json.erb: config/config.json
   pre-start.erb: bin/pre-start
+  ctl.erb: bin/ctl
   mount: bin/mount
 packages:
 - juicefs
+provides:
+- name: juicefs_mount
+  type: juicefs_mount
+  properties:
+  - juicefs.volume.name
+  - juicefs.volume.mount_point
 consumes:
 - name: postgres
   type: database
+  properties: [databases.port, databases.roles]
 - name: blobstore
   type: webdav
+  properties: [blobstore.port, blobstore.admin_users, blobstore.tls.cert]
 properties:
   juicefs.volume.name:
-    description: Name of the preformatted shared volume.
+    description: Name of the shared volume.
     default: juicefs-poc
+  juicefs.volume.initialize:
+    description: Initialize an unformatted filesystem in pre-start on the bootstrap instance. Backends must run on a separate instance; existing filesystems are never updated.
+    default: false
   juicefs.volume.mount_point:
-    description: FUSE mountpoint intended to be shared with the host by BPM.
+    description: FUSE mountpoint on the VM.
     default: /var/vcap/data/juicefs-volume/mount

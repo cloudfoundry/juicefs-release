@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -18,7 +19,9 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 )
 
 type config struct {
@@ -29,9 +32,11 @@ type config struct {
 		Host, Port, User, Password, Certificate string
 	} `json:"blobstore"`
 	Volume struct {
-		Name, MountPoint, CacheDir string
+		Name, MountPoint, CacheDir, Subdir string
 	} `json:"volume"`
 }
+
+const webDAVProxyAddress = "127.0.0.1:19798"
 
 func serveProxy(cfg config) (*http.Server, net.Listener, error) {
 	block, _ := pem.Decode([]byte(cfg.Blobstore.Certificate))
@@ -59,13 +64,35 @@ func serveProxy(cfg config) (*http.Server, net.Listener, error) {
 			return err
 		},
 	}}
-	listener, err := net.Listen("tcp", "127.0.0.1:17777")
+	listenConfig := net.ListenConfig{Control: func(_, _ string, rawConn syscall.RawConn) error {
+		var socketErr error
+		if err := rawConn.Control(func(fd uintptr) {
+			socketErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
+		}); err != nil {
+			return err
+		}
+		return socketErr
+	}}
+	listener, err := listenConfig.Listen(context.Background(), "tcp", webDAVProxyAddress)
 	if err != nil {
 		return nil, nil, err
 	}
 	server := &http.Server{Handler: proxy}
 	go server.Serve(listener)
 	return server, listener, nil
+}
+
+func waitForProxy(timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", webDAVProxyAddress, 100*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return errors.New("timed out waiting for cell WebDAV proxy")
 }
 
 func run(mode, configPath string) error {
@@ -77,32 +104,56 @@ func run(mode, configPath string) error {
 	if err = json.Unmarshal(contents, &cfg); err != nil {
 		return err
 	}
-	server, listener, err := serveProxy(cfg)
-	if err != nil {
-		return err
+	var server *http.Server
+	var listener net.Listener
+	if mode == "proxy" || mode == "format" || (mode == "mount" && cfg.Volume.Subdir == "") {
+		server, listener, err = serveProxy(cfg)
+		if err != nil {
+			return err
+		}
+		defer server.Close()
+		defer listener.Close()
 	}
-	defer server.Close()
-	defer listener.Close()
+	if mode == "mount" && cfg.Volume.Subdir != "" {
+		if !strings.HasPrefix(cfg.Volume.Subdir, "/cf-volumes/") || strings.Contains(cfg.Volume.Subdir, "..") {
+			return fmt.Errorf("invalid JuiceFS subdirectory %q", cfg.Volume.Subdir)
+		}
+		if err := waitForProxy(5 * time.Second); err != nil {
+			return err
+		}
+	}
+	if mode == "proxy" {
+		signals := make(chan os.Signal, 1)
+		signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
+		defer signal.Stop(signals)
+		<-signals
+		return nil
+	}
 
 	metaURL := fmt.Sprintf("postgres://%s:@%s:%s/%s?sslmode=disable", cfg.Postgres.User, cfg.Postgres.Host, cfg.Postgres.Port, cfg.Postgres.Database)
-	bucket := "http://127.0.0.1:17777/admin/"
+	bucket := fmt.Sprintf("http://%s/admin/", webDAVProxyAddress)
 	var args []string
 	switch mode {
 	case "format":
 		args = []string{"format", "--no-update", "--storage", "webdav", "--bucket", bucket, metaURL, cfg.Volume.Name}
 	case "mount":
-		fuse, err := os.OpenFile("/dev/fuse", os.O_RDWR, 0)
-		if err != nil {
-			return fmt.Errorf("open BPM /dev/fuse: %w", err)
-		}
-		fuse.Close()
-		args = []string{"mount", "--cache-dir", cfg.Volume.CacheDir, "--cache-size", "1024", "--backup-meta", "0", metaURL, cfg.Volume.MountPoint}
+		args = []string{"mount", "--foreground", "--subdir", cfg.Volume.Subdir, "--cache-dir", cfg.Volume.CacheDir, "--cache-size", "1024", "--backup-meta", "0", "--no-usage-report", metaURL, cfg.Volume.MountPoint}
 	default:
 		return fmt.Errorf("unknown mode %q", mode)
 	}
 	cmd := exec.Command("/var/vcap/packages/juicefs/bin/juicefs", args...)
 	cmd.Env = append(os.Environ(), "META_PASSWORD="+cfg.Postgres.Password, "ACCESS_KEY="+cfg.Blobstore.User, "SECRET_KEY="+cfg.Blobstore.Password)
+	if mode == "format" {
+		cmd.Env = append(cmd.Env, "JFS_BLOB="+bucket)
+	}
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	if mode == "mount" {
+		fuse, err := os.OpenFile("/dev/fuse", os.O_RDWR, 0)
+		if err != nil {
+			return fmt.Errorf("open /dev/fuse: %w", err)
+		}
+		fuse.Close()
+	}
 	if err = cmd.Start(); err != nil {
 		return err
 	}
@@ -121,8 +172,8 @@ func run(mode, configPath string) error {
 }
 
 func main() {
-	if len(os.Args) != 3 {
-		fmt.Fprintln(os.Stderr, "usage: juicefs-service format|mount CONFIG.json")
+	if len(os.Args) != 3 || (os.Args[1] != "format" && os.Args[1] != "mount" && os.Args[1] != "proxy") {
+		fmt.Fprintln(os.Stderr, "usage: juicefs-service format|mount|proxy CONFIG.json")
 		os.Exit(2)
 	}
 	if err := run(os.Args[1], os.Args[2]); err != nil {

@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# BPM's /dev is a separate tmpfs; create the FUSE device there. Binding the
-# host device via additional_volumes uses nodev and cannot be opened.
-if [ ! -e /dev/fuse ]; then
-  mknod -m 0666 /dev/fuse c 10 229
-fi
 exec /var/vcap/packages/juicefs/bin/juicefs-service mount /var/vcap/jobs/juicefs-volume/config/config.json

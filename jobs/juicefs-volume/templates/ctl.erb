@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+RUN_DIR=/var/vcap/sys/run/juicefs-volume
+LOG_DIR=/var/vcap/sys/log/juicefs-volume
+PIDFILE=${RUN_DIR}/juicefs-volume.pid
+
+case "${1:-}" in
+  start)
+    install -d -m 0755 "$RUN_DIR" "$LOG_DIR"
+    install -d -m 0755 "<%= p('juicefs.volume.mount_point') %>"
+    install -d -m 0700 /var/vcap/data/juicefs-volume/cache
+    test -c /dev/fuse || { echo "/dev/fuse is unavailable" >&2; exit 1; }
+    rm -f "$PIDFILE"
+    echo $$ > "$PIDFILE"
+    exec /var/vcap/jobs/juicefs-volume/bin/mount \
+      >> "$LOG_DIR/juicefs-volume.stdout.log" \
+      2>> "$LOG_DIR/juicefs-volume.stderr.log"
+    ;;
+  stop)
+    if [ -s "$PIDFILE" ]; then
+      pid=$(<"$PIDFILE")
+      if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+        # JuiceFS handles TERM by flushing and unmounting; Monit waits for the
+        # pidfile process to exit after this stop command returns.
+        kill -TERM "$pid" 2>/dev/null || true
+      else
+        rm -f "$PIDFILE"
+      fi
+    fi
+    ;;
+  *)
+    echo "Usage: ctl {start|stop}" >&2
+    exit 2
+    ;;
+esac

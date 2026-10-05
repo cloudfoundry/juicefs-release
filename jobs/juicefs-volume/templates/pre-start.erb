@@ -1,5 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
-install -d -m 0755 <%= p('juicefs.volume.mount_point') %>
+modprobe fuse || true
+install -d -m 0755 "<%= p('juicefs.volume.mount_point') %>"
 install -d -m 0700 /var/vcap/data/juicefs-volume/cache
 test -c /dev/fuse
+<% if spec.bootstrap && p('juicefs.volume.initialize') %>
+LOG_DIR=/var/vcap/sys/log/juicefs-volume
+install -d -m 0755 "$LOG_DIR"
+# Retry while the separate backend instance becomes ready. The formatter
+# distinguishes absent metadata from backend errors and never updates a volume.
+for attempt in {1..60}; do
+  if /var/vcap/packages/juicefs/bin/juicefs-service format \
+    /var/vcap/jobs/juicefs-volume/config/config.json \
+    >> "$LOG_DIR/initialize.stdout.log" 2>> "$LOG_DIR/initialize.stderr.log"; then
+    exit 0
+  fi
+  sleep 5
+done
+echo 'JuiceFS initialization failed; see initialize.stderr.log' >&2
+exit 1
+<% end %>
