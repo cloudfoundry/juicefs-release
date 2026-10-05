@@ -1,0 +1,30 @@
+releases:
+- name: juicefs
+  version: ((juicefs_release_version))
+
+addons:
+- name: juicefs-control-volume-service
+  include:
+    deployments: [cf]
+    instance_groups: [control]
+  jobs:
+  - name: juicefs-volume
+    release: juicefs
+    consumes:
+      postgres: {from: postgres, deployment: juicefs, ip_addresses: true}
+      blobstore: {from: blobstore, deployment: juicefs, ip_addresses: true}
+- name: juicefs-volume-driver
+  include:
+    deployments: [cf]
+    instance_groups: [compute]
+  jobs:
+  - name: juicefs-volume-driver
+    release: juicefs
+    consumes:
+      postgres: {from: postgres, deployment: juicefs, ip_addresses: true}
+      blobstore: {from: blobstore, deployment: juicefs, ip_addresses: true}
+      juicefs_volume: {from: juicefs_mount, deployment: cf}
+    properties:
+      juicefs:
+        volume:
+          name: juicefs-poc

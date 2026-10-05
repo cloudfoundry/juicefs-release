@@ -25,17 +25,19 @@ update:
   update_watch_time: 30000-60000
 
 instance_groups:
-- name: postgres
+- name: juicefs-backends
   azs: [z1]
   instances: 1
   vm_type: default
   stemcell: default
-  persistent_disk: 10240
+  persistent_disk: 20480
   networks:
   - name: default
   jobs:
   - name: postgres
     release: postgres
+    provides:
+      postgres: {as: postgres, shared: true}
     properties:
       databases:
         databases:
@@ -43,20 +45,12 @@ instance_groups:
         roles:
         - name: juicefs
           password: ((juicefs_postgres_password))
-
-- name: blobstore
-  azs: [z1]
-  instances: 1
-  vm_type: default
-  stemcell: default
-  persistent_disk: 10240
-  networks:
-  - name: default
-  jobs:
   - name: bpm
     release: bpm
   - name: blobstore
     release: juicefs
+    provides:
+      blobstore: {shared: true}
     properties:
       blobstore:
         admin_users:
@@ -65,55 +59,41 @@ instance_groups:
         tls:
           cert: ((juicefs_blobstore_tls_san.certificate))
           private_key: ((juicefs_blobstore_tls_san.private_key))
-
-- name: verify-backends
+- name: juicefs-broker
+  migrated_from:
+  - name: juicefs-mount-broker
+    az: z1
   azs: [z1]
-  lifecycle: errand
   instances: 1
   vm_type: default
   stemcell: default
   networks:
   - name: default
   jobs:
-  - name: verify-backends
-    release: juicefs
-    consumes:
-      postgres: {from: postgres, ip_addresses: true}
-      blobstore: {from: blobstore, ip_addresses: true}
-
-- name: format-volume
-  azs: [z1]
-  lifecycle: errand
-  instances: 1
-  vm_type: default
-  stemcell: default
-  networks:
-  - name: default
-  jobs:
-  - name: format-volume
-    release: juicefs
-    consumes:
-      postgres: {from: postgres, ip_addresses: true}
-      blobstore: {from: blobstore, ip_addresses: true}
-
-- name: juicefs-volume
-  azs: [z1]
-  # Enable after the BPM/FUSE device access issue is resolved on the test stemcell.
-  instances: 0
-  vm_type: default
-  stemcell: default
-  networks:
-  - name: default
-  jobs:
-  - name: bpm
-    release: bpm
   - name: juicefs-volume
     release: juicefs
+    properties:
+      juicefs:
+        volume:
+          initialize: true
+    provides:
+      juicefs_mount: {shared: true}
     consumes:
       postgres: {from: postgres, ip_addresses: true}
       blobstore: {from: blobstore, ip_addresses: true}
-
+  - name: juicefs-broker
+    release: juicefs
+    provides:
+      juicefs_broker: {shared: true}
+    properties:
+      juicefs:
+        broker:
+          password: ((juicefs-broker-password))
+    consumes:
+      juicefs_mount: {from: juicefs_mount}
 variables:
+- name: juicefs-broker-password
+  type: password
 - name: juicefs_postgres_password
   type: password
 - name: juicefs_blobstore_password
