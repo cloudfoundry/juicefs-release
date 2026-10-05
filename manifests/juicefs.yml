@@ -89,6 +89,19 @@ instance_groups:
       juicefs:
         broker:
           password: ((juicefs-broker-password))
+          plans:
+          - id: 40bf3e21-885a-4c2a-99b4-d4e8186c467e
+            name: shared
+            description: Shared JuiceFS directory without a quota
+            free: true
+            capacity_gib: 0
+            inodes: 0
+          - id: 5d3c1f42-eaa0-4d1b-88ce-b26cf6545cb1
+            name: small
+            description: Shared JuiceFS directory with 1 GiB and 1000 inodes
+            free: true
+            capacity_gib: 1
+            inodes: 1000
     consumes:
       juicefs_mount: {from: juicefs_mount}
 variables:

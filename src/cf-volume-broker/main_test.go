@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,58 @@ import (
 )
 
 const testInstanceID = "6a8cc1ed-a799-43c8-8ea2-38c4cf14fb19"
+
+func TestQuotaProvisionRetriesRetainOriginalPlan(t *testing.T) {
+	p := plan{ID: "small-id", Name: "small", Description: "Small", CapacityGiB: 1, Inodes: 10, Free: true}
+	b := &broker{root: t.TempDir(), plans: []plan{p}}
+	calls := 0
+	b.applyQuota = func(path string, selected plan) error {
+		calls++
+		if path != "/cf-volumes/"+testInstanceID || selected != p {
+			t.Fatalf("unexpected quota %s %+v", path, selected)
+		}
+		if calls == 1 {
+			return errors.New("backend unavailable")
+		}
+		return nil
+	}
+	provision := func(id string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodPut, "/", bytes.NewBufferString(`{"service_id":"`+serviceID+`","plan_id":"`+id+`"}`))
+		r.SetPathValue("id", testInstanceID)
+		w := httptest.NewRecorder()
+		b.provision(w, r)
+		return w
+	}
+	if w := provision(p.ID); w.Code != http.StatusInternalServerError {
+		t.Fatalf("first status %d", w.Code)
+	}
+	metadata, err := b.readInstanceMetadata(testInstanceID)
+	if err != nil || metadata == nil || metadata.Ready {
+		t.Fatalf("pending metadata %+v %v", metadata, err)
+	}
+	b.plans[0].CapacityGiB = 5
+	if w := provision(p.ID); w.Code != http.StatusCreated {
+		t.Fatalf("retry status %d %s", w.Code, w.Body.String())
+	}
+	if w := provision(p.ID); w.Code != http.StatusOK || calls != 2 {
+		t.Fatalf("idempotent status %d calls %d", w.Code, calls)
+	}
+	if w := provision(planID); w.Code != http.StatusConflict {
+		t.Fatalf("conflict status %d", w.Code)
+	}
+}
+
+func TestPlanValidation(t *testing.T) {
+	p := defaultPlans()[0]
+	for _, plans := range [][]plan{{}, {p, p}, {{ID: "id", Name: "bad name", Description: "bad"}}, {{ID: "id", Name: "small", Description: "bad", CapacityGiB: -1}}} {
+		if err := validatePlans(plans); err == nil {
+			t.Fatalf("invalid plans accepted: %+v", plans)
+		}
+	}
+	if err := validatePlans(defaultPlans()); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestProvisionBindAndDeprovisionUseInstanceSubdirectory(t *testing.T) {
 	root := t.TempDir()

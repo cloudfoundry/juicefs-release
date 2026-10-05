@@ -91,6 +91,18 @@ On the deployed POC, `verify-backends` exits 0: Postgres `SELECT 1`, WebDAV
 
 ## Cloud Foundry volume service POC
 
+`juicefs.broker.plans` configures stable plan IDs, CF-facing names, descriptions,
+`free`, `capacity_gib`, and `inodes`. Zero limits mean unlimited. The manifest
+keeps the original unlimited `shared` plan and adds an example `small` plan with
+1 GiB and 1000 inodes. Quotas are directory usage limits, not backend disk
+reservations. JuiceFS enforces them across all mounts of the service instance.
+Plan changes apply to new instances only; upgrades/downgrades are disabled.
+Provisioning records the selected plan and limits under
+`/.juicefs-broker/instances/<guid>.json`, outside the app-mounted subtree. Pending
+records make failed quota application retryable; completed provision retries do
+not change quotas. Existing pre-quota directories retain the unlimited shared
+plan. The broker's instance metadata lives on JuiceFS, not on its ephemeral disk.
+
 `operations/enable-juicefs-cf-volume-service.yml` enables CAPI volume services
 and defines registration/deregistration errands. The CF deployment is separate
 from the JuiceFS deployment. The JuiceFS deployment marks Postgres, WebDAV, the

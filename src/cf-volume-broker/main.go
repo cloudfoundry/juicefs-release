@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -34,6 +35,47 @@ type broker struct {
 	removeDirectory func(string) error
 	createDirectory func(string) error
 	cleanEmptyDirs  bool
+	plans           []plan
+	applyQuota      func(string, plan) error
+}
+
+type plan struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	CapacityGiB int64  `json:"capacity_gib"`
+	Inodes      int64  `json:"inodes"`
+	Free        bool   `json:"free"`
+}
+
+type instanceMetadata struct {
+	Plan  plan `json:"plan"`
+	Ready bool `json:"ready"`
+}
+
+func defaultPlans() []plan {
+	return []plan{{ID: planID, Name: "shared", Description: "Shared JuiceFS directory", Free: true}}
+}
+
+func validatePlans(plans []plan) error {
+	if len(plans) == 0 {
+		return errors.New("at least one broker plan is required")
+	}
+	ids, names := map[string]bool{}, map[string]bool{}
+	for _, p := range plans {
+		if p.ID == "" || !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]*$`).MatchString(p.Name) || p.Description == "" || p.CapacityGiB < 0 || p.CapacityGiB > (1<<63-1)/(1<<30) || p.Inodes < 0 || ids[p.ID] || names[p.Name] {
+			return fmt.Errorf("invalid or duplicate broker plan %q", p.Name)
+		}
+		ids[p.ID], names[p.Name] = true, true
+	}
+	return nil
+}
+
+func (b *broker) configuredPlans() []plan {
+	if b.plans == nil {
+		return defaultPlans()
+	}
+	return b.plans
 }
 
 type config struct {
@@ -43,6 +85,7 @@ type config struct {
 		DeletionTimeout                                 int
 		CleanEmptyDirs                                  bool
 		DirectoryUID, DirectoryGID                      int
+		Plans                                           []plan `json:"plans"`
 	} `json:"broker"`
 }
 
@@ -69,6 +112,12 @@ func main() {
 	if err := json.Unmarshal(contents, &cfg); err != nil {
 		log.Fatal(err)
 	}
+	if cfg.Broker.Plans == nil {
+		cfg.Broker.Plans = defaultPlans()
+	}
+	if err := validatePlans(cfg.Broker.Plans); err != nil {
+		log.Fatal(err)
+	}
 	if cfg.Broker.Root == "" || cfg.Broker.Username == "" || cfg.Broker.Password == "" {
 		log.Fatal("broker root, username and password are required")
 	}
@@ -80,7 +129,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	b := &broker{root: root, username: cfg.Broker.Username, password: cfg.Broker.Password, publicURL: cfg.Broker.PublicURL, cleanEmptyDirs: cfg.Broker.CleanEmptyDirs}
+	b := &broker{root: root, username: cfg.Broker.Username, password: cfg.Broker.Password, publicURL: cfg.Broker.PublicURL, cleanEmptyDirs: cfg.Broker.CleanEmptyDirs, plans: cfg.Broker.Plans}
+	b.applyQuota = applyDirectoryQuota
 	b.createDirectory = func(path string) error {
 		return createInstanceDirectory(path, cfg.Broker.DirectoryUID, cfg.Broker.DirectoryGID)
 	}
@@ -163,11 +213,15 @@ func (b *broker) auth(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (b *broker) catalog(w http.ResponseWriter, _ *http.Request) {
+	plans := []any{}
+	for _, p := range b.configuredPlans() {
+		plans = append(plans, map[string]any{"id": p.ID, "name": p.Name, "description": p.Description, "free": p.Free, "metadata": map[string]any{"capacity_gib": p.CapacityGiB, "inodes": p.Inodes}})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"services": []any{map[string]any{
 		"id": serviceID, "name": "juicefs", "description": "Dynamically provisioned JuiceFS directories", "bindable": true,
 		"plan_updateable": false, "requires": []string{"volume_mount"}, "tags": []string{"filesystem", "juicefs"},
 		"bindings_retrievable": false,
-		"plans":                []any{map[string]any{"id": planID, "name": "shared", "description": "Shared JuiceFS directory", "free": true}},
+		"plans":                plans,
 	}}})
 }
 
@@ -178,24 +232,90 @@ func (b *broker) provision(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req request
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ServiceID != serviceID || req.PlanID != planID {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ServiceID != serviceID {
 		writeError(w, http.StatusUnprocessableEntity, "unsupported service or plan")
 		return
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	metadata, err := b.readInstanceMetadata(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if metadata != nil && metadata.Plan.ID != req.PlanID {
+		writeError(w, http.StatusConflict, "service instance already exists with a different plan")
+		return
+	}
+	var selected plan
+	if metadata != nil {
+		selected = metadata.Plan
+	} else {
+		found := false
+		for _, p := range b.configuredPlans() {
+			if p.ID == req.PlanID {
+				selected, found = p, true
+				break
+			}
+		}
+		if !found {
+			writeError(w, http.StatusUnprocessableEntity, "unsupported service or plan")
+			return
+		}
+	}
 	root, err := b.instanceRoot()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	path := filepath.Join(root, id)
+	if metadata == nil {
+		if _, err := os.Lstat(path); err == nil {
+			// Instances predating quota support belonged to the unlimited shared plan.
+			if req.PlanID != planID {
+				writeError(w, http.StatusConflict, "existing legacy instance belongs to the shared plan")
+				return
+			}
+			metadata = &instanceMetadata{Plan: defaultPlans()[0], Ready: true}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		} else {
+			metadata = &instanceMetadata{Plan: selected}
+		}
+		if err := b.writeInstanceMetadata(id, metadata); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if metadata.Ready {
+		if info, err := os.Stat(path); err != nil || !info.IsDir() {
+			writeError(w, http.StatusInternalServerError, "provisioned instance directory is missing")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{})
+		return
+	}
 	create := b.createDirectory
 	if create == nil {
 		create = func(path string) error { return os.MkdirAll(path, 0770) }
 	}
 	if err := create(path); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create instance directory: %v", err))
+		return
+	}
+	if b.applyQuota != nil {
+		if err := b.applyQuota("/cf-volumes/"+id, metadata.Plan); err != nil {
+			writeError(w, http.StatusInternalServerError, "apply instance quota: "+err.Error())
+			return
+		}
+	} else if metadata.Plan.CapacityGiB != 0 || metadata.Plan.Inodes != 0 {
+		writeError(w, http.StatusInternalServerError, "quota backend is not configured")
+		return
+	}
+	metadata.Ready = true
+	if err := b.writeInstanceMetadata(id, metadata); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"dashboard_url": nil})
@@ -215,6 +335,10 @@ func (b *broker) deprovision(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("remove instance directory: %v", err))
+		return
+	}
+	if err := os.Remove(b.metadataPath(r.PathValue("id"))); err != nil && !errors.Is(err, os.ErrNotExist) {
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if b.cleanEmptyDirs {
@@ -254,6 +378,79 @@ func removeEmptyParents(path, stop string) error {
 
 func removeDirectory(path string) error {
 	return os.RemoveAll(path)
+}
+
+func (b *broker) metadataPath(id string) string {
+	return filepath.Join(b.root, ".juicefs-broker", "instances", id+".json")
+}
+
+func (b *broker) readInstanceMetadata(id string) (*instanceMetadata, error) {
+	contents, err := os.ReadFile(b.metadataPath(id))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var metadata instanceMetadata
+	if err := json.Unmarshal(contents, &metadata); err != nil {
+		return nil, err
+	}
+	if err := validatePlans([]plan{metadata.Plan}); err != nil {
+		return nil, err
+	}
+	return &metadata, nil
+}
+
+func (b *broker) writeInstanceMetadata(id string, metadata *instanceMetadata) error {
+	path := b.metadataPath(id)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	contents, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".instance-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(contents); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}
+
+func applyDirectoryQuota(path string, p plan) error {
+	if p.CapacityGiB == 0 && p.Inodes == 0 {
+		return nil
+	}
+	// Reuse the mount's rendered BOSH-link configuration, keeping secrets out
+	// of command arguments and broker instance metadata.
+	contents, err := os.ReadFile("/var/vcap/jobs/juicefs-volume/config/config.json")
+	if err != nil {
+		return err
+	}
+	var cfg struct {
+		Postgres struct{ Host, Port, Database, User, Password string }
+	}
+	if err := json.Unmarshal(contents, &cfg); err != nil {
+		return err
+	}
+	metaURL := fmt.Sprintf("postgres://%s:@%s:%s/%s?sslmode=disable", cfg.Postgres.User, cfg.Postgres.Host, cfg.Postgres.Port, cfg.Postgres.Database)
+	cmd := exec.Command("/var/vcap/packages/juicefs/bin/juicefs", "quota", "set", "--path", path, "--capacity", strconv.FormatInt(p.CapacityGiB, 10), "--inodes", strconv.FormatInt(p.Inodes, 10), metaURL)
+	cmd.Env = append(os.Environ(), "META_PASSWORD="+cfg.Postgres.Password)
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	return cmd.Run()
 }
 
 func createInstanceDirectory(path string, uid, gid int) error {
@@ -296,6 +493,15 @@ func (b *broker) bind(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "service instance directory does not exist")
 		return
 	}
+	metadata, err := b.readInstanceMetadata(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if metadata != nil && !metadata.Ready {
+		writeError(w, http.StatusConflict, "service instance provisioning is incomplete")
+		return
+	}
 	var req request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || (req.AppGUID == "" && req.BindResource.AppGUID == "") {
 		writeError(w, http.StatusBadRequest, "app_guid is required")
@@ -329,7 +535,16 @@ func (b *broker) getInstance(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "service instance directory does not exist")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"service_id": serviceID, "plan_id": planID})
+	metadata, err := b.readInstanceMetadata(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	id := planID
+	if metadata != nil {
+		id = metadata.Plan.ID
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"service_id": serviceID, "plan_id": id})
 }
 
 func serviceInstanceExists(root, id string) bool {

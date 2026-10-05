@@ -19,6 +19,15 @@ consumes:
   type: juicefs_mount
   properties: [juicefs.volume.name, juicefs.volume.mount_point]
 properties:
+  juicefs.broker.plans:
+    description: Catalog plans with stable id, name, description, free, capacity_gib and inodes. Zero limits mean unlimited. Changes apply only to new instances; keep plan IDs stable.
+    default:
+    - id: 40bf3e21-885a-4c2a-99b4-d4e8186c467e
+      name: shared
+      description: Shared JuiceFS directory
+      free: true
+      capacity_gib: 0
+      inodes: 0
   juicefs.broker.directory_uid:
     description: Host UID owning newly provisioned directories; match the cell's mapped application UID.
     default: 2000
