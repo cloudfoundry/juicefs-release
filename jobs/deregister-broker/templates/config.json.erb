@@ -3,9 +3,9 @@
   cc = link('cloud_controller_https_endpoint')
   config = {
     apiURL: "https://#{cc.p('cc.internal_service_hostname')}:#{cc.p('cc.public_tls.port')}",
-    caCert: cc.p('cc.public_tls.ca_cert'),
+    caCert: ([cc.p('cc.public_tls.ca_cert')] + p('juicefs.cf.additional_ca_certificates')).join("\n"),
     brokerName: p('juicefs.broker.name'),
-    brokerURL: "http://#{link('juicefs_broker').instances.first.ip_address}:#{link('juicefs_broker').p('juicefs.broker.port')}",
+    brokerURL: "http://#{link('juicefs_broker').instances.first.address}:#{link('juicefs_broker').p('juicefs.broker.port')}",
     brokerPort: link('juicefs_broker').p('juicefs.broker.port'),
     brokerUsername: link('juicefs_broker').p('juicefs.broker.username'),
     brokerPassword: link('juicefs_broker').p('juicefs.broker.password'),

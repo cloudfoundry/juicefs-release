@@ -1,14 +1,14 @@
 - type: replace
-  path: /instance_groups/name=api/jobs/name=cloud_controller_ng/properties/cc/volume_services_enabled?
+  path: /instance_groups/name=control/jobs/name=cloud_controller_ng/properties/cc/volume_services_enabled?
   value: true
 - type: replace
-  path: /instance_groups/name=cc-worker/jobs/name=cloud_controller_worker/properties/cc/volume_services_enabled?
+  path: /instance_groups/name=control/jobs/name=cloud_controller_worker/properties/cc/volume_services_enabled?
   value: true
 - type: replace
-  path: /instance_groups/name=scheduler/jobs/name=cloud_controller_clock/properties/cc/volume_services_enabled?
+  path: /instance_groups/name=control/jobs/name=cloud_controller_clock/properties/cc/volume_services_enabled?
   value: true
 - type: replace
-  path: /instance_groups/-
+  path: /instance_groups/name=register-juicefs-broker?
   value:
     azs: [z1]
     instances: 1
@@ -29,10 +29,11 @@
           name: juicefs
         cf:
           username: admin
-          password: ((/instant-bosh/cf/cf_admin_password))
+          password: ((cf_admin_password))
+          additional_ca_certificates: [((router_ssl.ca))]
           skip_ssl_validation: false
 - type: replace
-  path: /instance_groups/-
+  path: /instance_groups/name=deregister-juicefs-broker?
   value:
     azs: [z1]
     instances: 1
@@ -53,10 +54,11 @@
           name: juicefs
         cf:
           username: admin
-          password: ((/instant-bosh/cf/cf_admin_password))
+          password: ((cf_admin_password))
+          additional_ca_certificates: [((router_ssl.ca))]
           skip_ssl_validation: false
 - type: replace
-  path: /releases/-
+  path: /releases/name=juicefs?
   value:
     name: juicefs
     version: latest

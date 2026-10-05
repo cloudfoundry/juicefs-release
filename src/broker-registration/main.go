@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -123,21 +124,23 @@ func enableServiceAccess(env []string, brokerName string) error {
 	if len(response.Resources) != 1 || response.Resources[0].GUID == "" {
 		return errors.New("JuiceFS service offering not found after broker registration")
 	}
-	return runCF(env, "enable-service-access", "-b", brokerName, response.Resources[0].GUID)
+	return runCF(env, "enable-service-access", "-b", brokerName, "juicefs")
 }
 
 func registerBroker(env []string, cfg config) error {
-	brokers, err := cfOutput(env, "curl", "/v2/service_brokers?q=name:"+cfg.BrokerName)
+	brokers, err := cfOutput(env, "curl", "/v3/service_brokers?names="+url.QueryEscape(cfg.BrokerName))
 	if err != nil {
 		return err
 	}
 	var result struct {
-		Total int `json:"total_results"`
+		Pagination struct {
+			Total int `json:"total_results"`
+		} `json:"pagination"`
 	}
 	if err := json.Unmarshal(brokers, &result); err != nil {
 		return err
 	}
-	if result.Total == 0 {
+	if result.Pagination.Total == 0 {
 		return runCF(env, "create-service-broker", cfg.BrokerName, cfg.BrokerUsername, cfg.BrokerPassword, cfg.BrokerURL)
 	}
 	return runCF(env, "update-service-broker", cfg.BrokerName, cfg.BrokerUsername, cfg.BrokerPassword, cfg.BrokerURL)

@@ -29,6 +29,9 @@ properties:
   juicefs.cf.skip_ssl_validation:
     description: Skip Cloud Controller TLS validation.
     default: false
+  juicefs.cf.additional_ca_certificates:
+    description: Additional trust roots for authentication endpoints advertised by Cloud Controller.
+    default: []
   juicefs.broker.skip_ssl_validation:
     description: Skip TLS verification for the broker endpoint.
     default: false
