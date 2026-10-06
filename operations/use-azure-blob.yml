@@ -1,0 +1,9 @@
+- type: replace
+  path: /instance_groups/name=juicefs-broker/jobs/name=juicefs-volume/properties/juicefs/storage
+  value:
+    type: wasb
+    bucket: ((azure_container_url))
+    access_key: ((azure_account_name))
+    secret_key: ((azure_account_key))
+    session_token: ((azure_sas_token))
+    ca_cert: ((azure_ca_cert))

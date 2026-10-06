@@ -2,7 +2,7 @@
 
 A proof-of-concept [JuiceFS](https://juicefs.com/) volume service for Cloud Foundry.
 The release includes a service broker, a Diego volume driver, and a shared
-filesystem with PostgreSQL or MySQL metadata and WebDAV or S3 object storage.
+filesystem with PostgreSQL or MySQL metadata and WebDAV, S3, or Azure Blob object storage.
 The supplied deployment uses PostgreSQL and persistent WebDAV storage.
 
 Applications can provision a directory, bind it at a chosen container path, and
@@ -19,7 +19,7 @@ Cloud Foundry CLI → Cloud Controller → JuiceFS service broker
 Diego cell → JuiceFS volume driver → subdirectory FUSE mount → app container
                       │
                       ├─ PostgreSQL / MySQL: shared filesystem metadata
-                      └─ WebDAV / S3: persistent data blocks
+                      └─ WebDAV / S3 / Azure Blob: persistent data blocks
 ```
 
 The `juicefs` deployment has two singleton instance groups:
@@ -35,8 +35,8 @@ on `spec.bootstrap` when `juicefs.volume.initialize` is enabled.
 `juicefs format --no-update` leaves existing filesystems unchanged; backend errors
 fail startup.
 
-The CF runtime-config adds a full-root mount to `control` and the volume driver
-to `compute`. Both consume the broker VM's shared `juicefs_mount` BOSH link for
+The CF runtime-config adds the volume driver to `compute`. It consumes the
+broker VM's shared `juicefs_mount` BOSH link for
 the filesystem name and all backend settings, credentials, and trust roots.
 The broker's volume mounter is the authoritative configuration source;
 registration errands run in CF.
@@ -241,14 +241,14 @@ juicefs:
 
 Metadata types are `postgres` and `mysql`. `options` is an optional query string
 for the upstream database driver; ports default to 5432 and 3306 respectively.
-Storage types are `webdav` and `s3`; `bucket` is the upstream JuiceFS bucket URL.
+Storage types are `webdav`, `s3`, and `wasb` (Azure Blob); `bucket` is the upstream JuiceFS bucket URL.
 S3-compatible services can use their appropriate HTTP(S) bucket URL. Optional
 `session_token` supports temporary credentials, and `ca_cert` supplies a custom
 PEM trust root; an empty CA uses system trust. Secrets are passed to the CLI
 through environment variables rather than command arguments.
 
 These complete property objects are published by the mounter's `juicefs_mount`
-link. CF's mount and driver consume that link directly from deployment
+link. CF's volume driver consumes that link directly from deployment
 `juicefs`; they have no independent backend overrides. Broker quota operations
 reuse the mounter's rendered configuration, including its metadata engine.
 
@@ -260,7 +260,31 @@ file. Changing properties is not a data migration: `format --no-update` does
 not rewrite an existing filesystem's storage settings or copy metadata/objects.
 
 The linked PostgreSQL/WebDAV configuration is validated on the live POC;
-MySQL/S3 support has configuration tests but has not been integration-tested.
+MySQL/S3/Azure Blob support has configuration tests but has not been integration-tested.
+
+### Azure Blob Storage
+
+Use `operations/use-azure-blob.yml`, or configure the mounter's storage object:
+
+```yaml
+juicefs:
+  storage:
+    type: wasb
+    bucket: https://mycontainer.blob.core.windows.net
+    access_key: ((azure_account_name))
+    secret_key: ((azure_account_key))
+    session_token: ""
+    ca_cert: ""
+```
+
+JuiceFS uses `wasb` for Azure Blob. Its bucket URL contains the **container name**
+as the first hostname component, not the account name; `access_key` supplies the
+storage account name. `secret_key` is the account key. For SAS authentication,
+leave `secret_key` empty and put the SAS token in `session_token`. Without either
+a key or SAS token, upstream JuiceFS attempts Azure's default credential chain
+(such as VM managed identity); that identity must be available on every mount VM.
+Azure sovereign-cloud endpoints can use the corresponding blob domain.
+All these settings reach the driver through the same authoritative mounter link.
 
 ## Verification and troubleshooting
 

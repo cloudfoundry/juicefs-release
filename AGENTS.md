@@ -69,7 +69,7 @@ The JuiceFS deployment runs Postgres and WebDAV in `juicefs-backends`, separatel
 from the broker and full-root `juicefs-volume` mount in `juicefs-broker`.
 This allows bootstrap initialization to connect to the backends during `pre-start`.
 The CF runtime-config targets the
-live `control` group for the full-root mount and `compute` for the isolated
+live `compute` group for the isolated
 volume driver. `juicefs-volume` is a foreground FUSE client managed
 directly by Monit. Its
 launcher checks the host `/dev/fuse` device and logs under
@@ -111,14 +111,16 @@ from the JuiceFS deployment. The JuiceFS deployment marks Postgres, WebDAV, the
 full-root mountpoint, and broker as shared link providers. The CF runtime-config
 consumes the broker mounter's shared `juicefs_mount` link from deployment
 `juicefs`. That mounter is authoritative for `juicefs.metadata` (postgres or
-mysql), `juicefs.storage` (webdav or s3), and the filesystem name. The CF mount
-and Diego driver are link-only, with no independent backend overrides. Quota
+mysql), `juicefs.storage` (webdav, s3 or wasb/Azure Blob), and the filesystem name. The Diego
+driver is link-only, with no independent backend overrides. Quota
 commands reuse the mounter's rendered configuration. The colocated broker
 consumes its mountpoint link. `operations/use-mysql-s3.yml` shows external
-backend configuration; changing properties does not migrate existing data.
+backend configuration; `operations/use-azure-blob.yml` configures Azure Blob.
+Changing properties does not migrate existing data. The CF control group has
+no full-root mount; only the broker and cell driver mount JuiceFS.
 
 The runtime-config is `runtime-config/juicefs-volume-driver.yml`. It targets the
-live `control` group for the full-root mount and `compute` for the isolated
+live `compute` group for the isolated
 volume driver. Broker registration errands consume the shared broker link. The
 broker provisions
 directories beneath `/cf-volumes/<service-instance-guid>`; each cell mount uses

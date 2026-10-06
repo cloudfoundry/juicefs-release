@@ -73,6 +73,17 @@ func metadataURL(cfg config) (string, error) {
 	return result, nil
 }
 
+func validateStorage(kind, bucket string) error {
+	if kind != "webdav" && kind != "s3" && kind != "wasb" {
+		return fmt.Errorf("unsupported storage type %q", kind)
+	}
+	endpoint, err := url.Parse(bucket)
+	if err != nil || endpoint.Host == "" || (endpoint.Scheme != "https" && endpoint.Scheme != "http") {
+		return fmt.Errorf("storage bucket must be an HTTP(S) URL")
+	}
+	return nil
+}
+
 func run(mode, configPath string, extra ...string) error {
 	contents, err := os.ReadFile(configPath)
 	if err != nil {
@@ -99,12 +110,8 @@ func run(mode, configPath string, extra ...string) error {
 		cfg.Storage.Type, cfg.Storage.Bucket = "webdav", fmt.Sprintf("https://%s:%s/admin/", cfg.Blobstore.Hostname, cfg.Blobstore.Port)
 		cfg.Storage.AccessKey, cfg.Storage.SecretKey, cfg.Storage.CAFile = cfg.Blobstore.User, cfg.Blobstore.Password, cfg.Blobstore.CAFile
 	}
-	if cfg.Storage.Type != "webdav" && cfg.Storage.Type != "s3" {
-		return fmt.Errorf("unsupported storage type %q", cfg.Storage.Type)
-	}
-	endpoint, err := url.Parse(cfg.Storage.Bucket)
-	if err != nil || endpoint.Host == "" || (endpoint.Scheme != "https" && endpoint.Scheme != "http") {
-		return fmt.Errorf("storage bucket must be an HTTP(S) URL")
+	if err := validateStorage(cfg.Storage.Type, cfg.Storage.Bucket); err != nil {
+		return err
 	}
 	var args []string
 	switch mode {

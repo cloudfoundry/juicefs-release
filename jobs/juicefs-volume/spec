@@ -26,7 +26,7 @@ properties:
     description: Metadata backend with type (postgres or mysql), host, port, database, user, password and optional connection options. Set only on the provider mounter; consumers use juicefs_volume.
     default: {}
   juicefs.storage:
-    description: Object backend with type (webdav or s3), bucket URL, access_key, secret_key, optional session_token and ca_cert. Set only on the provider mounter.
+    description: Object backend with type (webdav, s3 or wasb for Azure Blob), bucket URL, access_key, secret_key, optional session_token and ca_cert. Set only on the provider mounter.
     default: {}
   juicefs.volume.name:
     description: Name of the shared volume.

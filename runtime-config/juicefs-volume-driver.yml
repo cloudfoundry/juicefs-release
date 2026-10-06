@@ -3,15 +3,6 @@ releases:
   version: ((juicefs_release_version))
 
 addons:
-- name: juicefs-control-volume-service
-  include:
-    deployments: [cf]
-    instance_groups: [control]
-  jobs:
-  - name: juicefs-volume
-    release: juicefs
-    consumes:
-      juicefs_volume: {from: juicefs_mount, deployment: juicefs}
 - name: juicefs-volume-driver
   include:
     deployments: [cf]

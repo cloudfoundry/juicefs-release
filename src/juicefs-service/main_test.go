@@ -26,3 +26,20 @@ func TestMetadataURL(t *testing.T) {
 		t.Fatal("unsupported metadata accepted")
 	}
 }
+
+func TestStorageBackends(t *testing.T) {
+	for _, kind := range []string{"webdav", "s3", "wasb"} {
+		if err := validateStorage(kind, "https://container.blob.core.windows.net"); err != nil {
+			t.Fatalf("%s: %v", kind, err)
+		}
+	}
+	for _, tc := range []struct{ kind, bucket string }{
+		{"azure", "https://container.blob.core.windows.net"},
+		{"wasb", "file:///container"},
+		{"wasb", ""},
+	} {
+		if err := validateStorage(tc.kind, tc.bucket); err == nil {
+			t.Fatalf("invalid storage accepted: %+v", tc)
+		}
+	}
+}
