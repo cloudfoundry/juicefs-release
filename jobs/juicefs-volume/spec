@@ -5,10 +5,11 @@ templates:
   config.json.erb: config/config.json
   pre-start.erb: bin/pre-start
   ctl.erb: bin/ctl
-  mount: bin/mount
+  mount.erb: bin/mount
   webdav-ca.crt.erb: config/webdav-ca.crt
 packages:
 - juicefs
+- ca-certificates
 provides:
 - name: juicefs_mount
   type: juicefs_mount
@@ -18,6 +19,9 @@ provides:
   - juicefs.metadata
   - juicefs.storage
 consumes:
+- name: azure_postgres_proxy
+  type: azure_postgres_proxy
+  optional: true
 - name: juicefs_volume
   type: juicefs_mount
   optional: true
@@ -26,13 +30,13 @@ properties:
     description: Metadata backend with type (postgres or mysql), host, port, database, user, password and optional connection options. Set only on the provider mounter; consumers use juicefs_volume.
     default: {}
   juicefs.storage:
-    description: Object backend with type (webdav, s3 or wasb for Azure Blob), bucket URL, access_key, secret_key, optional session_token and ca_cert. Set only on the provider mounter.
+    description: Object backend with type (webdav, s3 or wasb for Azure Blob), bucket URL, access_key, secret_key, optional session_token, ca_cert, managed_identity (boolean) and managed_identity_client_id. Set only on the provider mounter.
     default: {}
   juicefs.volume.name:
     description: Name of the shared volume.
     default: juicefs-poc
   juicefs.volume.initialize:
-    description: Initialize an unformatted filesystem in pre-start on the bootstrap instance. Backends must run on a separate instance; existing filesystems are never updated.
+    description: Initialize an unformatted filesystem in the mount launcher on the bootstrap instance, retrying until backends and any local proxy are ready. Existing filesystems are never updated.
     default: false
   juicefs.volume.mount_point:
     description: FUSE mountpoint on the VM.

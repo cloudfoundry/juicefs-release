@@ -30,7 +30,7 @@ The `juicefs` deployment has two singleton instance groups:
 | `juicefs-broker` | Full-root JuiceFS mount, service broker | Ephemeral cache; instance records live on JuiceFS |
 
 The backend group updates first, using BOSH's default serial instance-group
-updates. The mount initializes missing filesystem metadata in `pre-start`, only
+updates. The mount initializes missing filesystem metadata in its supervised launcher, only
 on `spec.bootstrap` when `juicefs.volume.initialize` is enabled.
 `juicefs format --no-update` leaves existing filesystems unchanged; backend errors
 fail startup.
@@ -78,7 +78,9 @@ devbox run vendor-go
 
 If you cloned without submodules, run `git submodule update --init --recursive`.
 The pinned upstream source is in `src/juicefs`. `vendor-go` stages its module
-dependencies in `src/juicefs-deps` for offline compilation on BOSH VMs.
+dependencies in `src/juicefs-deps` and the Azure PostgreSQL proxy dependencies in
+`src/azure-postgres-auth-proxy-deps` for offline compilation on BOSH VMs.
+The proxy is pinned to v0.1.5; `src/certifi` supplies pinned public CA roots.
 Run it again after changing the upstream revision.
 
 This POC uses a **local release blobstore** (`config/final.yml`). A Git clone
@@ -285,6 +287,11 @@ a key or SAS token, upstream JuiceFS attempts Azure's default credential chain
 (such as VM managed identity); that identity must be available on every mount VM.
 Azure sovereign-cloud endpoints can use the corresponding blob domain.
 All these settings reach the driver through the same authoritative mounter link.
+
+For explicit system-assigned or user-assigned managed identity, set
+`managed_identity: true` and optional `managed_identity_client_id` on the storage
+object. See [Azure managed identities](docs/azure-managed-identities.md) for VM
+identity assignment, PostgreSQL proxy colocation, Blob RBAC, and deployment steps.
 
 ## Verification and troubleshooting
 

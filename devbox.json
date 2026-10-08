@@ -10,7 +10,8 @@
         "bash -euo pipefail -c 'set -a; source ./bosh.env; set +a; bosh create-release --force && bosh upload-release && release_manifest=$(ls -v dev_releases/juicefs/juicefs-*.yml | tail -n 1) && bosh update-config --type=runtime --name=juicefs -n runtime-config/juicefs-volume-driver.yml -v juicefs_release_version=\"$(bosh interpolate \"$release_manifest\" --path /version)\" && bosh -n -d juicefs deploy manifests/juicefs.yml && bosh deploy -n -d cf <(bosh manifest -d cf) -o operations/enable-juicefs-cf-volume-service.yml'"
       ],
       "vendor-go": [
-        "bash -euo pipefail -c 'cd src/juicefs; go mod vendor; mkdir -p ../juicefs-deps; rm -rf ../juicefs-deps/vendor; mv vendor ../juicefs-deps/vendor'"
+        "bash -euo pipefail -c 'cd src/juicefs; go mod vendor; mkdir -p ../juicefs-deps; rm -rf ../juicefs-deps/vendor; mv vendor ../juicefs-deps/vendor'",
+        "bash -euo pipefail -c 'cd src/azure-postgres-auth-proxy; go mod vendor; mkdir -p ../azure-postgres-auth-proxy-deps; rm -rf ../azure-postgres-auth-proxy-deps/vendor; mv vendor ../azure-postgres-auth-proxy-deps/vendor'"
       ]
     }
   }

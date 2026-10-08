@@ -20,12 +20,14 @@ type config struct {
 		Port                                          int
 	} `json:"metadata"`
 	Storage struct {
-		Type, Bucket string
-		AccessKey    string `json:"access_key"`
-		SecretKey    string `json:"secret_key"`
-		SessionToken string `json:"session_token"`
-		CACert       string `json:"ca_cert"`
-		CAFile       string
+		Type, Bucket            string
+		AccessKey               string `json:"access_key"`
+		SecretKey               string `json:"secret_key"`
+		SessionToken            string `json:"session_token"`
+		CACert                  string `json:"ca_cert"`
+		CAFile                  string
+		ManagedIdentity         bool   `json:"managed_identity"`
+		ManagedIdentityClientID string `json:"managed_identity_client_id"`
 	} `json:"storage"`
 	Postgres struct {
 		Host, Port, Database, User, Password string
@@ -84,6 +86,38 @@ func validateStorage(kind, bucket string) error {
 	return nil
 }
 
+// storageEnvironment makes managed identity explicit and excludes credential
+// sources that would otherwise take precedence in the upstream Azure client.
+func storageEnvironment(cfg config, inherited []string) ([]string, error) {
+	if !cfg.Storage.ManagedIdentity {
+		if cfg.Storage.ManagedIdentityClientID != "" {
+			return nil, fmt.Errorf("managed_identity_client_id requires managed_identity")
+		}
+		return inherited, nil
+	}
+	if cfg.Storage.Type != "wasb" || !strings.HasPrefix(cfg.Storage.Bucket, "https://") {
+		return nil, fmt.Errorf("managed identity requires wasb storage with an HTTPS bucket")
+	}
+	if cfg.Storage.AccessKey == "" || cfg.Storage.SecretKey != "" || cfg.Storage.SessionToken != "" {
+		return nil, fmt.Errorf("managed identity requires the Azure account name and no account key or SAS token")
+	}
+	env := make([]string, 0, len(inherited)+2)
+	for _, entry := range inherited {
+		key, value, _ := strings.Cut(entry, "=")
+		if key == "AZURE_STORAGE_CONNECTION_STRING" && value != "" {
+			return nil, fmt.Errorf("AZURE_STORAGE_CONNECTION_STRING conflicts with managed identity")
+		}
+		if key != "AZURE_CLIENT_ID" && key != "AZURE_TOKEN_CREDENTIALS" {
+			env = append(env, entry)
+		}
+	}
+	env = append(env, "AZURE_TOKEN_CREDENTIALS=ManagedIdentityCredential")
+	if cfg.Storage.ManagedIdentityClientID != "" {
+		env = append(env, "AZURE_CLIENT_ID="+cfg.Storage.ManagedIdentityClientID)
+	}
+	return env, nil
+}
+
 func run(mode, configPath string, extra ...string) error {
 	contents, err := os.ReadFile(configPath)
 	if err != nil {
@@ -128,7 +162,13 @@ func run(mode, configPath string, extra ...string) error {
 		return fmt.Errorf("unknown mode %q", mode)
 	}
 	cmd := exec.Command("/var/vcap/packages/juicefs/bin/juicefs", args...)
-	cmd.Env = append(os.Environ(), "META_PASSWORD="+cfg.Metadata.Password, "ACCESS_KEY="+cfg.Storage.AccessKey, "SECRET_KEY="+cfg.Storage.SecretKey, "SESSION_TOKEN="+cfg.Storage.SessionToken)
+	cmd.Env, err = storageEnvironment(cfg, os.Environ())
+	if err != nil {
+		return err
+	}
+	cmd.Env = append(cmd.Env, "META_PASSWORD="+cfg.Metadata.Password, "ACCESS_KEY="+cfg.Storage.AccessKey, "SECRET_KEY="+cfg.Storage.SecretKey, "SESSION_TOKEN="+cfg.Storage.SessionToken)
+	// The release owns its default trust roots rather than relying on stemcell files.
+	cmd.Env = append(cmd.Env, "SSL_CERT_FILE=/var/vcap/packages/ca-certificates/certs/ca-certificates.crt", "SSL_CERT_DIR=/var/vcap/packages/ca-certificates/no-system-certs")
 	if cfg.Storage.CACert != "" && cfg.Storage.CAFile != "" {
 		cmd.Env = append(cmd.Env, "SSL_CERT_FILE="+cfg.Storage.CAFile)
 	} else if cfg.Blobstore.CAFile != "" {

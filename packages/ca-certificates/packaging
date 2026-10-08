@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -e -x
+mkdir -p "${BOSH_INSTALL_TARGET}/certs"
+cp certifi/certifi/cacert.pem "${BOSH_INSTALL_TARGET}/certs/ca-certificates.crt"
+cp certifi/LICENSE "${BOSH_INSTALL_TARGET}/LICENSE"

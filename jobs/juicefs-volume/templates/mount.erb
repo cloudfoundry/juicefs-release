@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+<% if spec.bootstrap && p('juicefs.volume.initialize') %>
+LOG_DIR=/var/vcap/sys/log/juicefs-volume
+install -d -m 0755 "$LOG_DIR"
+# Monit can start the colocated proxy while we wait. Never update an existing volume.
+initialized=false
+for attempt in {1..60}; do
+  if /var/vcap/packages/juicefs/bin/juicefs-service format \
+    /var/vcap/jobs/juicefs-volume/config/config.json \
+    >> "$LOG_DIR/initialize.stdout.log" 2>> "$LOG_DIR/initialize.stderr.log"; then
+    initialized=true
+    break
+  fi
+  sleep 5
+done
+if ! "$initialized"; then
+  echo 'JuiceFS initialization failed; see initialize.stderr.log' >&2
+  exit 1
+fi
+<% end %>
+exec /var/vcap/packages/juicefs/bin/juicefs-service mount /var/vcap/jobs/juicefs-volume/config/config.json

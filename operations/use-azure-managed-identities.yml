@@ -1,0 +1,48 @@
+# Apply to manifests/juicefs.yml. Apply the matching runtime-config ops to CF.
+- type: replace
+  path: /instance_groups/name=juicefs-broker/jobs/-
+  value:
+    name: bpm
+    release: bpm
+- type: replace
+  path: /instance_groups/name=juicefs-broker/jobs/-
+  value:
+    name: azure-postgres-auth-proxy
+    release: juicefs
+    provides:
+      azure_postgres_proxy: {as: azure_postgres_proxy}
+    properties:
+      azure_postgres_auth_proxy:
+        host: ((azure_postgres_host))
+        client_id: ((azure_postgres_managed_identity_client_id))
+        ca_cert: ((azure_postgres_ca_cert))
+- type: replace
+  path: /instance_groups/name=juicefs-broker/jobs/name=juicefs-volume/consumes/azure_postgres_proxy?
+  value: {from: azure_postgres_proxy}
+- type: replace
+  path: /instance_groups/name=juicefs-broker/jobs/name=juicefs-volume/properties/juicefs/metadata
+  value:
+    type: postgres
+    host: ((azure_postgres_host))
+    port: 5432
+    database: ((azure_postgres_database))
+    user: ((azure_postgres_user))
+    password: ""
+    options: sslmode=disable
+- type: replace
+  path: /instance_groups/name=juicefs-broker/jobs/name=juicefs-volume/properties/juicefs/storage
+  value:
+    type: wasb
+    bucket: ((azure_container_url))
+    access_key: ((azure_account_name))
+    secret_key: ""
+    session_token: ""
+    managed_identity: true
+    managed_identity_client_id: ((azure_blob_managed_identity_client_id))
+    ca_cert: ((azure_blob_ca_cert))
+- type: replace
+  path: /update/canary_watch_time
+  value: 30000-600000
+- type: replace
+  path: /update/update_watch_time
+  value: 30000-600000

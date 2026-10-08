@@ -1,0 +1,22 @@
+<%
+  require 'yaml'
+  host = p('azure_postgres_auth_proxy.host')
+  raise 'Azure PostgreSQL host must be a DNS hostname' unless host.is_a?(String) && host.match(/\A[a-zA-Z0-9][a-zA-Z0-9.-]*\z/) && host != 'localhost' && host != '127.0.0.1'
+  port = p('azure_postgres_auth_proxy.port')
+  upstream_port = p('azure_postgres_auth_proxy.upstream_port')
+  [port, upstream_port].each { |v| raise 'proxy ports must be integers between 1 and 65535' unless v.is_a?(Integer) && (1..65535).include?(v) }
+  env = {
+    'AZURE_TOKEN_CREDENTIALS' => 'ManagedIdentityCredential',
+    'PGSSLROOTCERT' => 'system',
+    'SSL_CERT_FILE' => p('azure_postgres_auth_proxy.ca_cert').empty? ? '/var/vcap/packages/ca-certificates/certs/ca-certificates.crt' : '/var/vcap/jobs/azure-postgres-auth-proxy/config/ca.crt',
+    'SSL_CERT_DIR' => '/var/vcap/jobs/azure-postgres-auth-proxy/config/no-system-certs'
+  }
+  client_id = p('azure_postgres_auth_proxy.client_id')
+  env['AZURE_CLIENT_ID'] = client_id unless client_id.empty?
+  process = {
+    'name' => 'proxy',
+    'executable' => '/var/vcap/packages/azure-postgres-auth-proxy/bin/azure-postgres-auth-proxy',
+    'args' => ["-listen-addr=127.0.0.1:#{port}", "-db-host=#{host}:#{upstream_port}", "-connect-timeout=#{p('azure_postgres_auth_proxy.connect_timeout')}", "-shutdown-timeout=#{p('azure_postgres_auth_proxy.shutdown_timeout')}"],
+    'env' => env
+  }
+%><%= {'processes' => [process]}.to_yaml %>

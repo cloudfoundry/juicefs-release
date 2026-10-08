@@ -1,0 +1,12 @@
+# Azure Blob only; leaves metadata configuration unchanged.
+- type: replace
+  path: /instance_groups/name=juicefs-broker/jobs/name=juicefs-volume/properties/juicefs/storage
+  value:
+    type: wasb
+    bucket: ((azure_container_url))
+    access_key: ((azure_account_name))
+    secret_key: ""
+    session_token: ""
+    managed_identity: true
+    managed_identity_client_id: ((azure_blob_managed_identity_client_id))
+    ca_cert: ((azure_blob_ca_cert))

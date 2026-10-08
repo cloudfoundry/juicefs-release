@@ -10,6 +10,11 @@
     name = volume.p('juicefs.volume.name')
   end
   raise 'JuiceFS metadata and storage settings are required' if metadata.empty? || storage.empty?
+  if_link('azure_postgres_proxy') do |proxy|
+    raise 'Azure PostgreSQL proxy requires postgres metadata without a password' unless metadata['type'] == 'postgres' && metadata.fetch('password', '').empty?
+    raise 'Azure PostgreSQL proxy must be colocated' unless proxy.instances.any? { |instance| instance.id == spec.id }
+    metadata = metadata.merge('host' => '127.0.0.1', 'port' => proxy.p('azure_postgres_auth_proxy.port'), 'options' => 'sslmode=disable')
+  end
   config = {
     metadata: metadata,
     storage: storage.merge('caFile' => '/var/vcap/jobs/juicefs-volume/config/webdav-ca.crt'),

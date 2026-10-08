@@ -10,7 +10,11 @@ templates:
   drain.erb: bin/drain
 packages:
 - juicefs
+- ca-certificates
 consumes:
+- name: azure_postgres_proxy
+  type: azure_postgres_proxy
+  optional: true
 - name: juicefs_volume
   type: juicefs_mount
   properties: [juicefs.volume.name, juicefs.metadata, juicefs.storage]

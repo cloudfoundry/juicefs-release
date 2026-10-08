@@ -12,6 +12,11 @@ Run `git submodule update --init --recursive` after cloning. Regenerate the loca
 Go module vendor tree after changing the upstream revision (`devbox run vendor-go`).
 The vendor tree is staged under `src/juicefs-deps` so it is shipped to compilation
 VMs; compilation has no outbound Go module dependency.
+`src/azure-postgres-auth-proxy` is pinned to v0.1.5 with its own vendor tree in
+`src/azure-postgres-auth-proxy-deps`; `devbox run vendor-go` stages both trees.
+`src/certifi` supplies packaged public CA roots. The optional Azure proxy uses
+BPM, listens only on loopback, and publishes a local-only `azure_postgres_proxy`
+link. See `docs/azure-managed-identities.md` for Azure-specific deployment commands.
 
 For local POC releases, `config/final.yml` uses a local blobstore in `final_blobs/`.
 `blobs/`, `final_blobs/`, and `.final_builds/` are ignored by Git. Keep local
@@ -52,7 +57,7 @@ persistent disk holds separate objects, so scaling it would not create shared st
 
 JuiceFS metadata lives in Postgres, data blocks live in the WebDAV blobstore,
 and the singleton mount initializes missing metadata using `format --no-update`
-in `pre-start` on `spec.bootstrap` before mounting (`juicefs.volume.initialize: true`). Existing filesystems are
+in its supervised mount launcher on `spec.bootstrap` before mounting (`juicefs.volume.initialize: true`). Existing filesystems are
 left unchanged; backend errors fail startup. CF mounts leave initialization
 disabled. Initialization cannot use `post-start`, because BOSH requires the
 mount and broker to be healthy before running that hook.
@@ -67,7 +72,8 @@ using `juicefs config --bucket`; no local WebDAV proxy is needed.
 
 The JuiceFS deployment runs Postgres and WebDAV in `juicefs-backends`, separately
 from the broker and full-root `juicefs-volume` mount in `juicefs-broker`.
-This allows bootstrap initialization to connect to the backends during `pre-start`.
+This allows bootstrap initialization to connect to the backends. The launcher
+also allows a colocated Azure PostgreSQL auth proxy to start concurrently.
 The CF runtime-config targets the
 live `compute` group for the isolated
 volume driver. `juicefs-volume` is a foreground FUSE client managed

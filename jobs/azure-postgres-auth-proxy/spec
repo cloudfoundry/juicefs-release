@@ -1,0 +1,35 @@
+---
+name: azure-postgres-auth-proxy
+description: Local PostgreSQL proxy authenticating to Azure with the VM managed identity. Requires colocated BPM.
+templates:
+  bpm.yml.erb: config/bpm.yml
+  ca.crt.erb: config/ca.crt
+packages:
+- azure-postgres-auth-proxy
+- ca-certificates
+provides:
+- name: azure_postgres_proxy
+  type: azure_postgres_proxy
+  properties:
+  - azure_postgres_auth_proxy.port
+properties:
+  azure_postgres_auth_proxy.host:
+    description: Azure PostgreSQL DNS hostname, used for TLS hostname verification.
+  azure_postgres_auth_proxy.upstream_port:
+    description: Azure PostgreSQL port.
+    default: 5432
+  azure_postgres_auth_proxy.port:
+    description: Local listener port. The listener always binds to 127.0.0.1; clients are not authenticated.
+    default: 5432
+  azure_postgres_auth_proxy.client_id:
+    description: User-assigned managed identity client ID; empty selects the VM system-assigned identity.
+    default: ""
+  azure_postgres_auth_proxy.ca_cert:
+    description: Optional PEM CA bundle replacing the packaged public roots for upstream HTTPS and PostgreSQL TLS verification.
+    default: ""
+  azure_postgres_auth_proxy.connect_timeout:
+    description: Upstream connection timeout as a Go duration.
+    default: 5s
+  azure_postgres_auth_proxy.shutdown_timeout:
+    description: Upstream graceful shutdown timeout as a Go duration.
+    default: 30s

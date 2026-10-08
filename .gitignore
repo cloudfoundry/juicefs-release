@@ -2,6 +2,7 @@ config/private.yml
 blobs
 final_blobs/
 bosh.env
+azure-vars.yml
 .devbox/
 dev_releases
 releases/*.tgz

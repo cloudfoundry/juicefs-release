@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-exec /var/vcap/packages/juicefs/bin/juicefs-service mount /var/vcap/jobs/juicefs-volume/config/config.json

@@ -1,0 +1,10 @@
+---
+name: azure-postgres-auth-proxy
+dependencies:
+- golang-1.25-linux
+files:
+- azure-postgres-auth-proxy/*.go
+- azure-postgres-auth-proxy/go.mod
+- azure-postgres-auth-proxy/go.sum
+- azure-postgres-auth-proxy/LICENSE
+- azure-postgres-auth-proxy-deps/vendor/**/*

@@ -1,0 +1,5 @@
+check process azure-postgres-auth-proxy
+  with pidfile /var/vcap/sys/run/bpm/azure-postgres-auth-proxy/proxy.pid
+  start program "/var/vcap/jobs/bpm/bin/bpm start azure-postgres-auth-proxy -p proxy"
+  stop program "/var/vcap/jobs/bpm/bin/bpm stop azure-postgres-auth-proxy -p proxy"
+  group vcap

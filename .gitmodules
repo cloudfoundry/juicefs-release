@@ -1,3 +1,9 @@
 [submodule "src/juicefs"]
 	path = src/juicefs
 	url = https://github.com/juicedata/juicefs.git
+[submodule "src/azure-postgres-auth-proxy"]
+	path = src/azure-postgres-auth-proxy
+	url = https://github.com/TelenorNorway/azure-postgres-auth-proxy.git
+[submodule "src/certifi"]
+	path = src/certifi
+	url = https://github.com/certifi/python-certifi.git

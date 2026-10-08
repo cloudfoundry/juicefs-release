@@ -1,0 +1,6 @@
+---
+name: ca-certificates
+dependencies: []
+files:
+- certifi/certifi/cacert.pem
+- certifi/LICENSE
