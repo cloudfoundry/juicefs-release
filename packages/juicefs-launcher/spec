@@ -1,0 +1,7 @@
+---
+name: juicefs-launcher
+dependencies:
+- golang-1.25-linux
+files:
+- juicefs-launcher/*.go
+- juicefs-launcher/go.mod

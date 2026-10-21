@@ -7,4 +7,3 @@ files:
 - azure-postgres-auth-proxy/go.mod
 - azure-postgres-auth-proxy/go.sum
 - azure-postgres-auth-proxy/LICENSE
-- azure-postgres-auth-proxy-deps/vendor/**/*

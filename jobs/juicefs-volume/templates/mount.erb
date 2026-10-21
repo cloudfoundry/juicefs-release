@@ -7,7 +7,7 @@ install -d -m 0755 "$LOG_DIR"
 # Monit can start the colocated proxy while we wait. Never update an existing volume.
 initialized=false
 for attempt in {1..60}; do
-  if /var/vcap/packages/juicefs/bin/juicefs-service format \
+  if /var/vcap/packages/juicefs-launcher/bin/juicefs-launcher format \
     /var/vcap/jobs/juicefs-volume/config/config.json \
     >> "$LOG_DIR/initialize.stdout.log" 2>> "$LOG_DIR/initialize.stderr.log"; then
     initialized=true
@@ -20,4 +20,4 @@ if ! "$initialized"; then
   exit 1
 fi
 <% end %>
-exec /var/vcap/packages/juicefs/bin/juicefs-service mount /var/vcap/jobs/juicefs-volume/config/config.json
+exec /var/vcap/packages/juicefs-launcher/bin/juicefs-launcher mount /var/vcap/jobs/juicefs-volume/config/config.json

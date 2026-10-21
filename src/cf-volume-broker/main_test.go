@@ -13,6 +13,44 @@ import (
 
 const testInstanceID = "6a8cc1ed-a799-43c8-8ea2-38c4cf14fb19"
 
+func TestRecursiveDeletionBoundsWorkersAndVerifiesCompletion(t *testing.T) {
+	path := filepath.Join(t.TempDir(), testInstanceID)
+	if err := os.Mkdir(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	execute := func(args ...string) error {
+		calls++
+		want := []string{"rmr", "--skip-trash", "--threads", "4", path}
+		if len(args) != len(want) {
+			t.Fatalf("unexpected arguments: %v", args)
+		}
+		for i := range want {
+			if args[i] != want[i] {
+				t.Fatalf("unexpected arguments: %v", args)
+			}
+		}
+		return nil
+	}
+	if err := removeJuiceFSDirectory(path, 4, execute); err == nil {
+		t.Fatal("successful CLI exit accepted while directory still exists")
+	}
+	if err := removeJuiceFSDirectory(path, 4, func(args ...string) error {
+		if err := execute(args...); err != nil {
+			return err
+		}
+		return os.RemoveAll(path)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeJuiceFSDirectory(path, 4, execute); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("absent-directory retry: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("absent directory invoked CLI: %d", calls)
+	}
+}
+
 func TestQuotaProvisionRetriesRetainOriginalPlan(t *testing.T) {
 	p := plan{ID: "small-id", Name: "small", Description: "Small", CapacityGiB: 1, Inodes: 10, Free: true}
 	b := &broker{root: t.TempDir(), plans: []plan{p}}

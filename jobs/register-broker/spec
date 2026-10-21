@@ -5,7 +5,7 @@ templates:
   run.erb: bin/run
   config.json.erb: config/config.json
 packages:
-- juicefs
+- broker-registration
 - cf-cli-8-linux
 consumes:
 - name: juicefs_broker

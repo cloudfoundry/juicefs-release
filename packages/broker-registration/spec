@@ -1,0 +1,7 @@
+---
+name: broker-registration
+dependencies:
+- golang-1.25-linux
+files:
+- broker-registration/*.go
+- broker-registration/go.mod

@@ -1,5 +1,5 @@
-// juicefs-service runs the JuiceFS CLI with a BOSH DNS WebDAV endpoint and
-// the CA trust supplied by its backend link.
+// juicefs-launcher runs the JuiceFS CLI with the backend configuration,
+// credentials, and CA trust rendered by BOSH.
 package main
 
 import (
@@ -201,7 +201,7 @@ func run(mode, configPath string, extra ...string) error {
 
 func main() {
 	if len(os.Args) < 3 || (os.Args[1] != "format" && os.Args[1] != "mount" && os.Args[1] != "quota") {
-		fmt.Fprintln(os.Stderr, "usage: juicefs-service format|mount|quota CONFIG.json [PATH CAPACITY INODES]")
+		fmt.Fprintln(os.Stderr, "usage: juicefs-launcher format|mount|quota CONFIG.json [PATH CAPACITY INODES]")
 		os.Exit(2)
 	}
 	if err := run(os.Args[1], os.Args[2], os.Args[3:]...); err != nil {

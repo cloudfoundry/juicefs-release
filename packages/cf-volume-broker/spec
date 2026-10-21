@@ -1,0 +1,7 @@
+---
+name: cf-volume-broker
+dependencies:
+- golang-1.25-linux
+files:
+- cf-volume-broker/*.go
+- cf-volume-broker/go.mod

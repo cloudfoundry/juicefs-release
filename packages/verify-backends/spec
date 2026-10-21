@@ -1,0 +1,8 @@
+---
+name: verify-backends
+dependencies:
+- golang-1.25-linux
+files:
+- verify-backends/*.go
+- verify-backends/go.mod
+- verify-backends/go.sum

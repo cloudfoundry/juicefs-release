@@ -3,12 +3,13 @@ blobs
 final_blobs/
 bosh.env
 azure-vars.yml
+src/juicefs-deps/
+src/azure-postgres-auth-proxy-deps/
 .devbox/
 dev_releases
 releases/*.tgz
 releases/**/*.tgz
 .dev_builds
-.final_builds/
 .DS_Store
 .idea
 *.swp

@@ -142,13 +142,13 @@ The proxy's properties live under `azure_postgres_auth_proxy`: `host`,
 
 ## 3. Build and deploy
 
-Initialize submodules and vendor dependencies before building:
+Initialize submodules before building. Pre-packaging hooks vendor Go dependencies
+in BOSH's temporary source copy using the Devbox Go toolchain:
 
 ```sh
 git submodule update --init --recursive
-devbox run vendor-go
 source bosh.env
-bosh create-release --force
+devbox run -- bosh create-release --force
 bosh upload-release
 ```
 
@@ -209,7 +209,7 @@ From the release root, run the wrapper and template tests (Ruby requires the
 standard `minitest` library):
 
 ```sh
-devbox run -- go test -race ./src/juicefs-service/main.go ./src/juicefs-service/main_test.go
+devbox run -- go test -race ./src/juicefs-launcher/main.go ./src/juicefs-launcher/main_test.go
 ruby tests/render_templates.rb
 ```
 

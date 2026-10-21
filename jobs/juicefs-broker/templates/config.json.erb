@@ -4,4 +4,5 @@
     broker: {listenAddr: p('juicefs.broker.listen_addr'), root: link('juicefs_mount').p('juicefs.volume.mount_point'), username: p('juicefs.broker.username'), password: p('juicefs.broker.password'), mountReadyTimeout: p('juicefs.broker.mount_ready_timeout'), cleanEmptyDirs: p('juicefs.broker.clean_empty_dirs'), directoryUID: p('juicefs.broker.directory_uid'), directoryGID: p('juicefs.broker.directory_gid')}
   }
   config[:broker][:plans] = p('juicefs.broker.plans')
+  config[:broker][:deletionThreads] = p('juicefs.broker.deletion_threads')
 %><%= JSON.generate(config) %>

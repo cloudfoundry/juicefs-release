@@ -62,7 +62,7 @@ instance_groups:
   instances: 1
   vm_type: default
   stemcell: default
-  persistent_disk: 20480
+  persistent_disk: 51200
   networks:
   - name: default
   jobs:

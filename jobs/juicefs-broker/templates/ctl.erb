@@ -18,7 +18,7 @@ case "${1:-}" in
     fi
     rm -f "$PIDFILE"
     echo $$ > "$PIDFILE"
-    exec /var/vcap/packages/juicefs/bin/cf-volume-broker \
+    exec /var/vcap/packages/cf-volume-broker/bin/cf-volume-broker \
       >> "$LOG_DIR/broker.stdout.log" 2>> "$LOG_DIR/broker.stderr.log"
     ;;
   stop)

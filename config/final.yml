@@ -1,5 +1,5 @@
 name: juicefs
 blobstore:
-  provider: local
+  provider: gcs
   options:
-    blobstore_path: final_blobs
+    bucket_name: juicefs-release-blobs

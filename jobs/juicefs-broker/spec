@@ -7,6 +7,8 @@ templates:
   pre-start.erb: bin/pre-start
 packages:
 - juicefs
+- juicefs-launcher
+- cf-volume-broker
 provides:
 - name: juicefs_broker
   type: juicefs_broker
@@ -19,6 +21,9 @@ consumes:
   type: juicefs_mount
   properties: [juicefs.volume.name, juicefs.volume.mount_point]
 properties:
+  juicefs.broker.deletion_threads:
+    description: Recursive deletion workers per service instance. Keep low to avoid exhausting the shared metadata database connection limit.
+    default: 4
   juicefs.broker.plans:
     description: Catalog plans with stable id, name, description, free, capacity_gib and inodes. Zero limits mean unlimited. Changes apply only to new instances; keep plan IDs stable.
     default:

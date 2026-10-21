@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -e -x
+
+export GOTOOLCHAIN=local
+export GOFLAGS=-mod=mod
+cd "${BUILD_DIR}/azure-postgres-auth-proxy"
+go mod vendor

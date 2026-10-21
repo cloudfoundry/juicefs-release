@@ -10,7 +10,7 @@ case "${1:-}" in
     install -d -m 0750 "$RUN_DIR" "$LOG_DIR"
     rm -f "$PIDFILE"
     echo $$ > "$PIDFILE"
-    exec /var/vcap/packages/juicefs/bin/cf-volume-driver \
+    exec /var/vcap/packages/cf-volume-driver/bin/cf-volume-driver \
       >> "$LOG_DIR/driver.stdout.log" 2>> "$LOG_DIR/driver.stderr.log"
     ;;
   stop)

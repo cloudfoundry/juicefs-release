@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -e -x
+source /var/vcap/packages/golang-1.25-linux/bosh/compile.env
+export GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local CGO_ENABLED=0
+cd "${BOSH_COMPILE_TARGET}/broker-registration"
+mkdir -p "${BOSH_INSTALL_TARGET}/bin"
+go build -mod=readonly -trimpath -ldflags='-s -w' -o "${BOSH_INSTALL_TARGET}/bin/broker-registration" .

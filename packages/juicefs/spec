@@ -4,9 +4,3 @@ dependencies:
 - golang-1.25-linux
 files:
 - juicefs/**
-- juicefs-deps/**
-- verify-backends/**/*
-- juicefs-service/**/*
-- cf-volume-broker/**/*
-- cf-volume-driver/**/*
-- broker-registration/**/*

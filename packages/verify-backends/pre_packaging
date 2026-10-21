@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -e -x
+export GOTOOLCHAIN=local GOFLAGS=-mod=mod
+cd "${BUILD_DIR}/verify-backends"
+go mod vendor

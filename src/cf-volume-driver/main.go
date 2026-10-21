@@ -19,7 +19,7 @@ import (
 
 const (
 	driverName = "juicefs-volume-driver"
-	serviceBin = "/var/vcap/packages/juicefs/bin/juicefs-service"
+	launcherBin = "/var/vcap/packages/juicefs-launcher/bin/juicefs-launcher"
 )
 
 type volume struct {
@@ -215,7 +215,7 @@ func writeMountOverride(configPath, mountpoint, cacheDir string) (string, func()
 }
 
 func runJuiceFSMount(configPath string) error {
-	cmd := exec.Command(serviceBin, "mount", configPath)
+	cmd := exec.Command(launcherBin, "mount", configPath)
 	cmd.Env = os.Environ()
 	return runCommandUntilSignal(cmd)
 }
@@ -401,7 +401,7 @@ func (d *driver) handleMount(w http.ResponseWriter, r *http.Request) {
 		write(w, mountResponse{Err: err.Error()})
 		return
 	}
-	cmd := exec.Command("/var/vcap/packages/juicefs/bin/juicefs-service", "mount", configPath)
+	cmd := exec.Command(launcherBin, "mount", configPath)
 	cmd.Env = os.Environ()
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := cmd.Start(); err != nil {

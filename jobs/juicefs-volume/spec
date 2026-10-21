@@ -9,6 +9,7 @@ templates:
   webdav-ca.crt.erb: config/webdav-ca.crt
 packages:
 - juicefs
+- juicefs-launcher
 - ca-certificates
 provides:
 - name: juicefs_mount

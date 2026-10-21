@@ -3,7 +3,6 @@ set -e -x
 source /var/vcap/packages/golang-1.25-linux/bosh/compile.env
 export GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local GOFLAGS=-mod=vendor
 cd "${BOSH_COMPILE_TARGET}/azure-postgres-auth-proxy"
-ln -s "${BOSH_COMPILE_TARGET}/azure-postgres-auth-proxy-deps/vendor" vendor
 mkdir -p "${BOSH_INSTALL_TARGET}/bin"
 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "${BOSH_INSTALL_TARGET}/bin/azure-postgres-auth-proxy" .
 cp LICENSE "${BOSH_INSTALL_TARGET}/LICENSE"

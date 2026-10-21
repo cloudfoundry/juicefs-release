@@ -83,6 +83,7 @@ type config struct {
 		ListenAddr, Root, Username, Password, PublicURL string
 		MountReadyTimeout                               int
 		DeletionTimeout                                 int
+		DeletionThreads                                 int
 		CleanEmptyDirs                                  bool
 		DirectoryUID, DirectoryGID                      int
 		Plans                                           []plan `json:"plans"`
@@ -134,11 +135,15 @@ func main() {
 	b.createDirectory = func(path string) error {
 		return createInstanceDirectory(path, cfg.Broker.DirectoryUID, cfg.Broker.DirectoryGID)
 	}
+	deletionThreads := cfg.Broker.DeletionThreads
+	if deletionThreads == 0 {
+		deletionThreads = 4
+	}
+	if deletionThreads < 1 || deletionThreads > 255 {
+		log.Fatal("deletionThreads must be between 1 and 255")
+	}
 	b.removeDirectory = func(path string) error {
-		if _, err := os.Lstat(path); err != nil {
-			return err
-		}
-		return execJuiceFS("rmr", "--skip-trash", path)
+		return removeJuiceFSDirectory(path, deletionThreads, execJuiceFS)
 	}
 	mountTimeout := time.Duration(cfg.Broker.MountReadyTimeout) * time.Second
 	if mountTimeout <= 0 {
@@ -380,6 +385,25 @@ func removeDirectory(path string) error {
 	return os.RemoveAll(path)
 }
 
+func removeJuiceFSDirectory(path string, threads int, execute func(...string) error) error {
+	if _, err := os.Lstat(path); err != nil {
+		return err
+	}
+	// The CLI defaults to 50 workers. Bound concurrency so deleting an app's
+	// workspace does not exhaust the shared metadata database's connections.
+	if err := execute("rmr", "--skip-trash", "--threads", strconv.Itoa(threads), path); err != nil {
+		return err
+	}
+	// rmr can log a controller-open error and still exit successfully. Keep the
+	// instance record until deletion is actually confirmed on the mount.
+	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	return errors.New("JuiceFS recursive deletion returned success but instance directory still exists")
+}
+
 func (b *broker) metadataPath(id string) string {
 	return filepath.Join(b.root, ".juicefs-broker", "instances", id+".json")
 }
@@ -436,7 +460,7 @@ func applyDirectoryQuota(path string, p plan) error {
 	}
 	// Reuse the mount's rendered BOSH-link configuration, keeping secrets out
 	// of command arguments and broker instance metadata.
-	cmd := exec.Command("/var/vcap/packages/juicefs/bin/juicefs-service", "quota", "/var/vcap/jobs/juicefs-volume/config/config.json", path, strconv.FormatInt(p.CapacityGiB, 10), strconv.FormatInt(p.Inodes, 10))
+	cmd := exec.Command("/var/vcap/packages/juicefs-launcher/bin/juicefs-launcher", "quota", "/var/vcap/jobs/juicefs-volume/config/config.json", path, strconv.FormatInt(p.CapacityGiB, 10), strconv.FormatInt(p.Inodes, 10))
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	return cmd.Run()
 }

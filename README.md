@@ -70,31 +70,45 @@ the endpoint, not the filesystem UUID or stored objects.
 ## Build setup
 
 ```sh
-git clone --recurse-submodules https://github.com/rkoster/juicefs-release.git
+git clone --recurse-submodules https://github.com/cloudfoundry/juicefs-release.git
 cd juicefs-release
 devbox install
-devbox run vendor-go
 ```
 
 If you cloned without submodules, run `git submodule update --init --recursive`.
-The pinned upstream source is in `src/juicefs`. `vendor-go` stages its module
-dependencies in `src/juicefs-deps` and the Azure PostgreSQL proxy dependencies in
-`src/azure-postgres-auth-proxy-deps` for offline compilation on BOSH VMs.
-The proxy is pinned to v0.1.5; `src/certifi` supplies pinned public CA roots.
-Run it again after changing the upstream revision.
+The pinned upstream source is in `src/juicefs`. Each Go package's `pre_packaging`
+hook runs `go mod vendor` against BOSH's temporary source copy before archiving
+the package. Run release creation inside Devbox so Go 1.25 is available:
 
-This POC uses a **local release blobstore** (`config/final.yml`). A Git clone
-alone does not contain the artifacts needed to build: restore `blobs/`,
-`final_blobs/`, and `.final_builds/` from the development environment, or
-re-vendor the packages from their source releases with `bosh vendor-package`.
-The tracked package locks are:
+```sh
+devbox run -- bosh create-release --force
+```
+
+Release creation needs access to the pinned Go modules (or a populated local
+module cache). Compilation VMs receive the generated vendor trees and compile
+with module downloads disabled. Generated dependencies are not stored in Git
+or written into the source submodules.
+The proxy is pinned to v0.1.5; `src/certifi` supplies pinned public CA roots.
+
+The upstream client is the only binary in `packages/juicefs`. Release-owned
+tools build independently in `juicefs-launcher`, `cf-volume-broker`,
+`cf-volume-driver`, `broker-registration`, and `verify-backends` packages, each
+with its own Go module. Registration and deregistration share one
+`broker-registration` binary. Jobs declare the client and helper packages they
+actually invoke, so helper changes do not rebuild the upstream client.
+
+Release blobs are stored in **`gs://juicefs-release-blobs`** (`config/final.yml`).
+The vendored-package build indexes in `.final_builds/` and package locks are
+tracked so a fresh clone can download the pinned package blobs. The locks are:
 
 - `packages/golang-1.25-linux/spec.lock`
 - `packages/nginx_webdav/spec.lock` — vendored from CAPI release
 - `packages/cf-cli-8-linux/spec.lock`
 
-Preserve these ignored artifacts when rebuilding. A shared permanent blobstore
-is not configured yet.
+Run `bosh sync-blobs` to populate the local blob cache. Uploaders configure GCS
+credentials in ignored `config/private.yml`, then run `bosh upload-blobs` after
+adding blobs. Never commit that file or its service-account key. Preserve local
+`blobs/` and legacy `final_blobs/` caches when rebuilding.
 
 Create a local, ignored `bosh.env` containing the director environment and
 credentials. The development environment uses a copy from
@@ -168,6 +182,9 @@ cf delete-service foobar -f --wait
 **Deprovisioning deletes the instance's files.** The broker uses JuiceFS `rmr
 --skip-trash`, removes its instance record, and treats an already absent
 directory as successful cleanup. Unbinding alone does not delete files.
+Recursive deletion uses `juicefs.broker.deletion_threads` (default 4), rather
+than the CLI's 50-worker default, to limit metadata database connection pressure.
+The broker verifies the directory is absent before removing its instance record.
 
 ## Plans and quotas
 
@@ -312,13 +329,23 @@ For deployment failures, start with `bosh task <task-id> --debug`. For app
 under `/var/vcap/sys/log/juicefs-volume/`; broker logs are under
 `/var/vcap/sys/log/juicefs-broker/`.
 
+PostgreSQL metadata and WebDAV blocks share the backend persistent disk (50 GiB
+in the example manifest). Monitor its free space: a full object store can also
+prevent PostgreSQL checkpoints, causing metadata EIO errors across all mounts.
+`operations/expand-backend-disk.yml` expands the example backend disk to 50 GiB
+when applied to the deployed manifest; increase that value for larger workloads.
+Preserve the disk and recover the database before reconnecting affected clients.
+If an app retains a disconnected FUSE mount, stop it and wait for its volume
+unmount to finish before starting it again; an immediate restart can race the
+old container's delayed unmount.
+
 Focused broker tests can run without building the upstream JuiceFS binary:
 
 ```sh
 devbox run -- go test -race ./src/cf-volume-broker/main.go ./src/cf-volume-broker/main_test.go
 devbox run -- go test -race ./src/cf-volume-driver/main.go ./src/cf-volume-driver/main_test.go
 devbox run -- go test ./src/broker-registration/main.go ./src/broker-registration/main_test.go
-devbox run -- go test ./src/juicefs-service/main.go ./src/juicefs-service/main_test.go
+devbox run -- go test ./src/juicefs-launcher/main.go ./src/juicefs-launcher/main_test.go
 ```
 
 The deployed POC has verified provision/bind, container read/write, persistence

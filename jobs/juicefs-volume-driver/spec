@@ -10,6 +10,8 @@ templates:
   drain.erb: bin/drain
 packages:
 - juicefs
+- juicefs-launcher
+- cf-volume-driver
 - ca-certificates
 consumes:
 - name: azure_postgres_proxy

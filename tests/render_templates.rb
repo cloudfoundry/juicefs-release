@@ -106,9 +106,9 @@ class AzureTemplatesTest < Minitest::Test
   def test_initialization_only_runs_in_bootstrap_launcher
     props = {'juicefs.volume.initialize' => true}
     bootstrap = RenderContext.new('juicefs-volume', props)
-    assert_includes bootstrap.render('juicefs-volume', 'mount.erb'), 'juicefs-service format'
-    refute_includes bootstrap.render('juicefs-volume', 'pre-start.erb'), 'juicefs-service format'
-    refute_includes RenderContext.new('juicefs-volume', props, {}, false).render('juicefs-volume', 'mount.erb'), 'juicefs-service format'
-    refute_includes RenderContext.new('juicefs-volume').render('juicefs-volume', 'mount.erb'), 'juicefs-service format'
+    assert_includes bootstrap.render('juicefs-volume', 'mount.erb'), 'juicefs-launcher format'
+    refute_includes bootstrap.render('juicefs-volume', 'pre-start.erb'), 'juicefs-launcher format'
+    refute_includes RenderContext.new('juicefs-volume', props, {}, false).render('juicefs-volume', 'mount.erb'), 'juicefs-launcher format'
+    refute_includes RenderContext.new('juicefs-volume').render('juicefs-volume', 'mount.erb'), 'juicefs-launcher format'
   end
 end

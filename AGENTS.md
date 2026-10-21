@@ -6,24 +6,30 @@ This is the `juicefs` BOSH release. `src/juicefs` is a pinned upstream Git submo
 `blobstore` job; re-vendor it from `../capi-release` when upgrading CAPI's package.
 The vendored package locks live in `packages/nginx_webdav/spec.lock`,
 `packages/golang-1.25-linux/spec.lock`, and `packages/cf-cli-8-linux/spec.lock`.
-Their build indexes in `.final_builds/` and package blobs in `final_blobs/` are
-local and ignored by Git.
-Run `git submodule update --init --recursive` after cloning. Regenerate the local
-Go module vendor tree after changing the upstream revision (`devbox run vendor-go`).
-The vendor tree is staged under `src/juicefs-deps` so it is shipped to compilation
-VMs; compilation has no outbound Go module dependency.
-`src/azure-postgres-auth-proxy` is pinned to v0.1.5 with its own vendor tree in
-`src/azure-postgres-auth-proxy-deps`; `devbox run vendor-go` stages both trees.
+Their build indexes in `.final_builds/` are tracked; package blobs are stored in
+the GCS release blobstore.
+Run `git submodule update --init --recursive` after cloning. Go packages use
+`pre_packaging` hooks to run `go mod vendor` in BOSH's temporary source copy.
+Run `devbox run -- bosh create-release --force` so Go 1.25 is available locally.
+Release creation needs module network access or a populated module cache;
+compilation VMs receive the generated vendor trees and build offline.
+Do not check generated dependency trees into Git.
+`packages/juicefs` contains only the upstream client. Release-owned tools have
+separate packages and Go modules under matching `src/` directories; helpers with
+external dependencies use their own pre-packaging vendoring hooks. Both broker
+registration errands use the single `broker-registration` binary/package.
+`src/azure-postgres-auth-proxy` is pinned to v0.1.5.
 `src/certifi` supplies packaged public CA roots. The optional Azure proxy uses
 BPM, listens only on loopback, and publishes a local-only `azure_postgres_proxy`
 link. See `docs/azure-managed-identities.md` for Azure-specific deployment commands.
 
-For local POC releases, `config/final.yml` uses a local blobstore in `final_blobs/`.
-`blobs/`, `final_blobs/`, and `.final_builds/` are ignored by Git. Keep local
-blob data and build indexes when rebuilding. A fresh clone needs both the local
-blobstore and vendored-package build indexes restored, or the packages re-vendored
-from their source releases with `bosh vendor-package`, before it can build this
-release. A later permanent blobstore can replace the local one. Do not enable Git LFS.
+`config/final.yml` uses GCS bucket `juicefs-release-blobs`. Configure uploader
+credentials in ignored `config/private.yml`; never print or commit its contents.
+`blobs/` and legacy `final_blobs/` are ignored caches; keep their local data when
+rebuilding. Vendored-package indexes in `.final_builds/` must be tracked alongside
+`spec.lock` files. Run `bosh sync-blobs` after cloning; run `bosh upload-blobs`
+after adding blobs. The repository home is
+`https://github.com/cloudfoundry/juicefs-release`. Do not enable Git LFS.
 
 `bosh.env` is a local, ignored copy of `../instant-bosh/bosh.env`. It contains
 director credentials. Do not commit it or print its contents. Refresh it from
