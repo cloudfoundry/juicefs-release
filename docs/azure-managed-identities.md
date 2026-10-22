@@ -209,7 +209,7 @@ From the release root, run the wrapper and template tests (Ruby requires the
 standard `minitest` library):
 
 ```sh
-devbox run -- go test -race ./src/juicefs-launcher/main.go ./src/juicefs-launcher/main_test.go
+devbox run -- scripts/test-go
 ruby tests/render_templates.rb
 ```
 

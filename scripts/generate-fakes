@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+for module in juicefs-launcher cf-volume-broker cf-volume-driver broker-registration verify-backends; do
+  (
+    cd "$root/src/$module"
+    GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local GOFLAGS=-mod=vendor go generate ./internal/...
+  )
+done

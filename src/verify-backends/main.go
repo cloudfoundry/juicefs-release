@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/cloudfoundry/juicefs-release/src/verify-backends/internal/backend"
 )
 
 type config struct {
@@ -24,7 +24,7 @@ type config struct {
 	} `json:"blobstore"`
 }
 
-func request(client *http.Client, method, url, user, password, body string, want ...int) error {
+func request(client backend.HTTPClient, method, url, user, password, body string, want ...int) error {
 	req, err := http.NewRequest(method, url, strings.NewReader(body))
 	if err != nil {
 		return err
@@ -49,6 +49,10 @@ func request(client *http.Client, method, url, user, password, body string, want
 }
 
 func run(path string) error {
+	return runWith(path, backend.Postgres{}, nil)
+}
+
+func runWith(path string, database backend.Database, httpClient backend.HTTPClient) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -59,14 +63,9 @@ func run(path string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	db, err := pgx.Connect(ctx, fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", cfg.Postgres.User, cfg.Postgres.Password, cfg.Postgres.Host, cfg.Postgres.Port, cfg.Postgres.Database))
+	err = database.Check(ctx, fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", cfg.Postgres.User, cfg.Postgres.Password, cfg.Postgres.Host, cfg.Postgres.Port, cfg.Postgres.Database))
 	if err != nil {
 		return fmt.Errorf("postgres connection: %w", err)
-	}
-	defer db.Close(context.Background())
-	var result int
-	if err = db.QueryRow(ctx, "SELECT 1").Scan(&result); err != nil || result != 1 {
-		return fmt.Errorf("postgres SELECT 1: %v (result %d)", err, result)
 	}
 	fmt.Println("Postgres SELECT 1: OK")
 
@@ -74,9 +73,12 @@ func run(path string) error {
 	if !pool.AppendCertsFromPEM([]byte(cfg.Blobstore.CA)) {
 		return fmt.Errorf("invalid blobstore CA certificate")
 	}
-	client := &http.Client{Timeout: 15 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{
-		RootCAs: pool,
-	}}}
+	client := httpClient
+	if client == nil {
+		client = &http.Client{Timeout: 15 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{
+			RootCAs: pool,
+		}}}
+	}
 	base := fmt.Sprintf("https://%s:%s/admin/", cfg.Blobstore.Host, cfg.Blobstore.Port)
 	if err = request(client, "PROPFIND", base, cfg.Blobstore.User, cfg.Blobstore.Password, "", 207); err != nil {
 		return err

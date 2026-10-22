@@ -3,5 +3,7 @@ name: cf-volume-driver
 dependencies:
 - golang-1.25-linux
 files:
-- cf-volume-driver/*.go
+- cf-volume-driver/**/*.go
 - cf-volume-driver/go.mod
+- cf-volume-driver/go.sum
+- cf-volume-driver/vendor/**/*

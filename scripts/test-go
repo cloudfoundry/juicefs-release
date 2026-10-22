@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+output=${COVERAGE_DIR:-/tmp/juicefs-release-coverage}
+seed=${GINKGO_SEED:-$(date +%s)}
+mkdir -p "$output"
+for module in juicefs-launcher cf-volume-broker cf-volume-driver broker-registration verify-backends; do
+  (
+    cd "$root/src/$module"
+    GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local go test -mod=vendor -race \
+      -coverpkg=./,./internal/... -coverprofile="$output/$module.out" \
+      ./... -ginkgo.randomize-all -ginkgo.seed="$seed" || exit $?
+    go tool cover -func="$output/$module.out"
+  )
+done

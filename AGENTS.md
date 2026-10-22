@@ -8,15 +8,19 @@ The vendored package locks live in `packages/nginx_webdav/spec.lock`,
 `packages/golang-1.25-linux/spec.lock`, and `packages/cf-cli-8-linux/spec.lock`.
 Their build indexes in `.final_builds/` are tracked; package blobs are stored in
 the GCS release blobstore.
-Run `git submodule update --init --recursive` after cloning. Go packages use
+Run `git submodule update --init --recursive` after cloning. Upstream Go submodules use
 `pre_packaging` hooks to run `go mod vendor` in BOSH's temporary source copy.
 Run `devbox run -- bosh create-release --force` so Go 1.25 is available locally.
 Release creation needs module network access or a populated module cache;
 compilation VMs receive the generated vendor trees and build offline.
-Do not check generated dependency trees into Git.
+Release-owned Go modules check in their vendor directories, go.mod/go.sum,
+and Counterfeiter-generated fakes. Use Ginkgo v2/Gomega for behavioral suites.
+Run `scripts/test-go` for randomized race tests and coverage excluding fakes;
+run `scripts/generate-fakes` to regenerate fakes using the pinned vendored tool.
+Do not check generated vendor trees for upstream submodules into Git.
 `packages/juicefs` contains only the upstream client. Release-owned tools have
-separate packages and Go modules under matching `src/` directories; helpers with
-external dependencies use their own pre-packaging vendoring hooks. Both broker
+separate packages and Go modules under matching `src/` directories; these compile
+offline against their checked-in vendor trees. Both broker
 registration errands use the single `broker-registration` binary/package.
 `src/azure-postgres-auth-proxy` is pinned to v0.1.5.
 `src/certifi` supplies packaged public CA roots. The optional Azure proxy uses

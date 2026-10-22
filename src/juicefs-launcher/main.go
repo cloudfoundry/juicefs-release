@@ -8,10 +8,11 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
+
+	"github.com/cloudfoundry/juicefs-release/src/juicefs-launcher/internal/command"
 )
 
 type config struct {
@@ -119,6 +120,21 @@ func storageEnvironment(cfg config, inherited []string) ([]string, error) {
 }
 
 func run(mode, configPath string, extra ...string) error {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
+	defer signal.Stop(signals)
+	return runWith(mode, configPath, command.ExecRunner{}, signals, checkFuse, extra...)
+}
+
+func checkFuse() error {
+	fuse, err := os.OpenFile("/dev/fuse", os.O_RDWR, 0)
+	if err != nil {
+		return fmt.Errorf("open /dev/fuse: %w", err)
+	}
+	return fuse.Close()
+}
+
+func runWith(mode, configPath string, runner command.Runner, signals <-chan os.Signal, deviceCheck func() error, extra ...string) error {
 	contents, err := os.ReadFile(configPath)
 	if err != nil {
 		return err
@@ -161,42 +177,24 @@ func run(mode, configPath string, extra ...string) error {
 	default:
 		return fmt.Errorf("unknown mode %q", mode)
 	}
-	cmd := exec.Command("/var/vcap/packages/juicefs/bin/juicefs", args...)
-	cmd.Env, err = storageEnvironment(cfg, os.Environ())
+	env, err := storageEnvironment(cfg, os.Environ())
 	if err != nil {
 		return err
 	}
-	cmd.Env = append(cmd.Env, "META_PASSWORD="+cfg.Metadata.Password, "ACCESS_KEY="+cfg.Storage.AccessKey, "SECRET_KEY="+cfg.Storage.SecretKey, "SESSION_TOKEN="+cfg.Storage.SessionToken)
+	env = append(env, "META_PASSWORD="+cfg.Metadata.Password, "ACCESS_KEY="+cfg.Storage.AccessKey, "SECRET_KEY="+cfg.Storage.SecretKey, "SESSION_TOKEN="+cfg.Storage.SessionToken)
 	// The release owns its default trust roots rather than relying on stemcell files.
-	cmd.Env = append(cmd.Env, "SSL_CERT_FILE=/var/vcap/packages/ca-certificates/certs/ca-certificates.crt", "SSL_CERT_DIR=/var/vcap/packages/ca-certificates/no-system-certs")
+	env = append(env, "SSL_CERT_FILE=/var/vcap/packages/ca-certificates/certs/ca-certificates.crt", "SSL_CERT_DIR=/var/vcap/packages/ca-certificates/no-system-certs")
 	if cfg.Storage.CACert != "" && cfg.Storage.CAFile != "" {
-		cmd.Env = append(cmd.Env, "SSL_CERT_FILE="+cfg.Storage.CAFile)
+		env = append(env, "SSL_CERT_FILE="+cfg.Storage.CAFile)
 	} else if cfg.Blobstore.CAFile != "" {
-		cmd.Env = append(cmd.Env, "SSL_CERT_FILE="+cfg.Blobstore.CAFile)
+		env = append(env, "SSL_CERT_FILE="+cfg.Blobstore.CAFile)
 	}
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if mode == "mount" {
-		fuse, err := os.OpenFile("/dev/fuse", os.O_RDWR, 0)
-		if err != nil {
-			return fmt.Errorf("open /dev/fuse: %w", err)
+		if err := deviceCheck(); err != nil {
+			return err
 		}
-		fuse.Close()
 	}
-	if err = cmd.Start(); err != nil {
-		return err
-	}
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
-	defer signal.Stop(signals)
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
-	select {
-	case err = <-done:
-		return err
-	case sig := <-signals:
-		_ = cmd.Process.Signal(sig)
-		return <-done
-	}
+	return runner.Run("/var/vcap/packages/juicefs/bin/juicefs", args, env, signals)
 }
 
 func main() {

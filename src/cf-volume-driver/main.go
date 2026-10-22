@@ -15,10 +15,12 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/cloudfoundry/juicefs-release/src/cf-volume-driver/internal/process"
 )
 
 const (
-	driverName = "juicefs-volume-driver"
+	driverName  = "juicefs-volume-driver"
 	launcherBin = "/var/vcap/packages/juicefs-launcher/bin/juicefs-launcher"
 )
 
@@ -26,19 +28,22 @@ type volume struct {
 	Subdir     string `json:"subdir"`
 	Mountpoint string `json:"mountpoint,omitempty"`
 	MountCount int    `json:"mount_count,omitempty"`
-	cmd        *exec.Cmd
+	cmd        process.Process
 	done       chan error
 }
 
 type driver struct {
-	mu         sync.Mutex
-	volumes    map[string]*volume
-	statePath  string
-	configPath string
-	mountRoot  string
-	cacheRoot  string
-	baseConfig map[string]any
-	stop       chan struct{}
+	mu              sync.Mutex
+	volumes         map[string]*volume
+	statePath       string
+	configPath      string
+	mountRoot       string
+	cacheRoot       string
+	baseConfig      map[string]any
+	stop            chan struct{}
+	processes       process.Factory
+	mounts          process.Mounts
+	shutdownTimeout time.Duration
 }
 
 type createRequest struct {
@@ -240,7 +245,10 @@ func runCommandUntilSignal(cmd *exec.Cmd) error {
 }
 
 func (d *driver) register() error {
-	const dir = "/var/vcap/data/voldrivers"
+	return registerDriver("/var/vcap/data/voldrivers")
+}
+
+func registerDriver(dir string) error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
@@ -280,7 +288,7 @@ func (d *driver) load() error {
 
 func (d *driver) recoverMounts() error {
 	for id, v := range d.volumes {
-		mounted, err := isMounted(filepath.Join(d.mountRoot, id))
+		mounted, err := d.mountSystem().Mounted(filepath.Join(d.mountRoot, id))
 		if err != nil {
 			return err
 		}
@@ -288,7 +296,7 @@ func (d *driver) recoverMounts() error {
 			// A cell reboot or driver restart may leave mountinfo state while the
 			// old process is gone. Do not invent a live refcount; future Mount
 			// calls below will create a fresh foreground client after cleanup.
-			if err := syscall.Unmount(filepath.Join(d.mountRoot, id), syscall.MNT_DETACH); err != nil {
+			if err := d.mountSystem().Unmount(filepath.Join(d.mountRoot, id)); err != nil {
 				return fmt.Errorf("recover stale JuiceFS mount %s: %w", id, err)
 			}
 		}
@@ -357,11 +365,11 @@ func (d *driver) handleMount(w http.ResponseWriter, r *http.Request) {
 		write(w, mountResponse{Err: "volume must be created before it is mounted"})
 		return
 	}
-	if v.MountCount > 0 && (v.cmd == nil || v.cmd.Process == nil) {
+	if v.MountCount > 0 && v.cmd == nil {
 		write(w, mountResponse{Err: "volume has positive reference count but no mount process; unmount before retrying"})
 		return
 	}
-	if v.MountCount > 0 && v.cmd != nil && v.cmd.Process != nil {
+	if v.MountCount > 0 && v.cmd != nil {
 		select {
 		case err := <-v.done:
 			v.cmd = nil
@@ -401,9 +409,11 @@ func (d *driver) handleMount(w http.ResponseWriter, r *http.Request) {
 		write(w, mountResponse{Err: err.Error()})
 		return
 	}
-	cmd := exec.Command(launcherBin, "mount", configPath)
-	cmd.Env = os.Environ()
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	factory := d.processes
+	if factory == nil {
+		factory = process.FactoryImpl{}
+	}
+	cmd := factory.New(launcherBin, "mount", configPath)
 	if err := cmd.Start(); err != nil {
 		cleanupConfig()
 		write(w, mountResponse{Err: err.Error()})
@@ -416,13 +426,13 @@ func (d *driver) handleMount(w http.ResponseWriter, r *http.Request) {
 		cleanupConfig()
 	}(v.done)
 	if err := d.waitMounted(mountpoint, v.done, 15*time.Second); err != nil {
-		_ = cmd.Process.Signal(syscall.SIGTERM)
+		_ = cmd.Signal(syscall.SIGTERM)
 		write(w, mountResponse{Err: err.Error()})
 		return
 	}
 	v.Mountpoint, v.MountCount = mountpoint, 1
 	if err := d.save(); err != nil {
-		_ = cmd.Process.Signal(syscall.SIGTERM)
+		_ = cmd.Signal(syscall.SIGTERM)
 		v.MountCount = 0
 		write(w, mountResponse{Err: err.Error()})
 		return
@@ -457,12 +467,12 @@ func (d *driver) handleUnmount(w http.ResponseWriter, r *http.Request) {
 		write(w, errorResponse{})
 		return
 	}
-	if v.cmd != nil && v.cmd.Process != nil {
-		_ = v.cmd.Process.Signal(syscall.SIGTERM)
+	if v.cmd != nil {
+		_ = v.cmd.Signal(syscall.SIGTERM)
 		select {
 		case <-v.done:
-		case <-time.After(30 * time.Second):
-			_ = v.cmd.Process.Kill()
+		case <-time.After(d.processShutdownTimeout()):
+			_ = v.cmd.Kill()
 			<-v.done
 		}
 	}
@@ -504,14 +514,14 @@ func (d *driver) unmountAll() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	for _, v := range d.volumes {
-		if v.cmd == nil || v.cmd.Process == nil {
+		if v.cmd == nil {
 			continue
 		}
-		_ = v.cmd.Process.Signal(syscall.SIGTERM)
+		_ = v.cmd.Signal(syscall.SIGTERM)
 		select {
 		case <-v.done:
-		case <-time.After(30 * time.Second):
-			_ = v.cmd.Process.Kill()
+		case <-time.After(d.processShutdownTimeout()):
+			_ = v.cmd.Kill()
 			<-v.done
 		}
 		v.cmd, v.done, v.MountCount, v.Mountpoint = nil, nil, 0, ""
@@ -589,13 +599,32 @@ func (d *driver) writeMountConfig(id, subdir, mountpoint, cache string) error {
 	return os.WriteFile(path, encoded, 0600)
 }
 
+type hostMounts struct{}
+
+func (d *driver) processShutdownTimeout() time.Duration {
+	if d.shutdownTimeout > 0 {
+		return d.shutdownTimeout
+	}
+	return 30 * time.Second
+}
+
+func (hostMounts) Mounted(path string) (bool, error) { return isMounted(path) }
+func (hostMounts) Unmount(path string) error         { return syscall.Unmount(path, syscall.MNT_DETACH) }
+
+func (d *driver) mountSystem() process.Mounts {
+	if d.mounts != nil {
+		return d.mounts
+	}
+	return hostMounts{}
+}
+
 func (d *driver) waitMounted(mountpoint string, done <-chan error, timeout time.Duration) error {
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		mounted, err := isMounted(mountpoint)
+		mounted, err := d.mountSystem().Mounted(mountpoint)
 		if err != nil {
 			return err
 		}
@@ -603,8 +632,6 @@ func (d *driver) waitMounted(mountpoint string, done <-chan error, timeout time.
 			return nil
 		}
 		select {
-		case <-d.stop:
-			return errors.New("driver shutting down")
 		case <-d.stop:
 			return errors.New("driver shutting down")
 		case err := <-done:

@@ -76,7 +76,7 @@ devbox install
 ```
 
 If you cloned without submodules, run `git submodule update --init --recursive`.
-The pinned upstream source is in `src/juicefs`. Each Go package's `pre_packaging`
+The pinned upstream source is in `src/juicefs`. Each upstream submodule package's `pre_packaging`
 hook runs `go mod vendor` against BOSH's temporary source copy before archiving
 the package. Run release creation inside Devbox so Go 1.25 is available:
 
@@ -86,8 +86,9 @@ devbox run -- bosh create-release --force
 
 Release creation needs access to the pinned Go modules (or a populated local
 module cache). Compilation VMs receive the generated vendor trees and compile
-with module downloads disabled. Generated dependencies are not stored in Git
-or written into the source submodules.
+with module downloads disabled. Upstream dependencies are not stored in Git
+or written into the source submodules. Release-owned modules under `src/` check
+in their own `vendor/` directories, including their test/generation dependencies.
 The proxy is pinned to v0.1.5; `src/certifi` supplies pinned public CA roots.
 
 The upstream client is the only binary in `packages/juicefs`. Release-owned
@@ -339,14 +340,28 @@ If an app retains a disconnected FUSE mount, stop it and wait for its volume
 unmount to finish before starting it again; an immediate restart can race the
 old container's delayed unmount.
 
-Focused broker tests can run without building the upstream JuiceFS binary:
+Release-owned Go modules use Ginkgo v2/Gomega with Counterfeiter fakes for process,
+mount-system, command execution, HTTP, and database boundaries. Real temporary
+directories exercise filesystem persistence, while subprocess adapter tests
+verify command execution and signal forwarding without FUSE or a BOSH director.
+
+Run all suites with race detection and randomized order, and report statement
+coverage excluding generated fakes:
 
 ```sh
-devbox run -- go test -race ./src/cf-volume-broker/main.go ./src/cf-volume-broker/main_test.go
-devbox run -- go test -race ./src/cf-volume-driver/main.go ./src/cf-volume-driver/main_test.go
-devbox run -- go test ./src/broker-registration/main.go ./src/broker-registration/main_test.go
-devbox run -- go test ./src/juicefs-launcher/main.go ./src/juicefs-launcher/main_test.go
+devbox run -- scripts/test-go
+GINKGO_SEED=8675309 devbox run -- scripts/test-go
+devbox run -- scripts/generate-fakes
 ```
+
+Coverage profiles default to `/tmp/juicefs-release-coverage`; override with
+`COVERAGE_DIR`. Tests and fake generation use the checked-in vendor trees with
+network downloads disabled. When updating a release-owned module's dependencies,
+run `go mod tidy` and `go mod vendor` in that module, regenerate fakes, then
+commit `go.mod`, `go.sum`, `vendor/`, and `fakes/` together. Counterfeiter is pinned
+in each module's Go `tool` directive. Generated fakes are not imported by
+production code or linked into release binaries. Upstream submodules retain
+pre-packaging vendoring instead.
 
 The deployed POC has verified provision/bind, container read/write, persistence
 across app restarts, custom container paths, and capacity/inode quota rejection.

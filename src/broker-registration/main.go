@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/exec"
+	"path/filepath"
 	"strings"
+
+	"github.com/cloudfoundry/juicefs-release/src/broker-registration/internal/cli"
 )
 
 type config struct {
@@ -44,6 +46,15 @@ func main() {
 	if !strings.Contains(os.Getenv("PATH"), "/var/vcap/packages/cf-cli-8-linux/bin") {
 		_ = os.Setenv("PATH", "/var/vcap/packages/cf-cli-8-linux/bin:"+os.Getenv("PATH"))
 	}
+	if err := runRegistration(os.Args[1], cfg, "/var/vcap/data/broker-registration", cli.ExecRunner{}); err != nil {
+		fatal(err)
+	}
+}
+
+func runRegistration(mode string, cfg config, dataDir string, runner cli.Runner) error {
+	if mode != "register" && mode != "deregister" {
+		return errors.New("invalid registration mode")
+	}
 	cfg.CFUsername = envOr("CF_USERNAME", cfg.CFUsername)
 	cfg.CFPassword = envOr("CF_PASSWORD", cfg.CFPassword)
 	cfg.BrokerUsername = envOr("BROKER_USERNAME", cfg.BrokerUsername)
@@ -54,27 +65,27 @@ func main() {
 		cfg.SkipBrokerSSLValidation = true
 	}
 	if cfg.APIURL == "" || cfg.CFUsername == "" || cfg.CFPassword == "" || cfg.BrokerName == "" || cfg.BrokerUsername == "" || cfg.BrokerPassword == "" {
-		fatal(errors.New("Cloud Controller and broker link credentials are required"))
+		return errors.New("Cloud Controller and broker link credentials are required")
 	}
 	if cfg.BrokerURL == "" {
 		if cfg.BrokerPort == 0 {
-			fatal(errors.New("broker URL or linked broker port is required"))
+			return errors.New("broker URL or linked broker port is required")
 		}
 		cfg.BrokerURL = fmt.Sprintf("http://127.0.0.1:%d", cfg.BrokerPort)
 	}
 	if strings.HasPrefix(cfg.BrokerURL, "https://") && cfg.SkipBrokerSSLValidation {
-		fatal(errors.New("cf CLI does not support skipping TLS validation for a service broker URL; provide a trusted broker certificate"))
+		return errors.New("cf CLI does not support skipping TLS validation for a service broker URL; provide a trusted broker certificate")
 	}
 
-	cfHome := "/var/vcap/data/broker-registration/cf-home"
+	cfHome := filepath.Join(dataDir, "cf-home")
 	if err := os.MkdirAll(cfHome, 0700); err != nil {
-		fatal(err)
+		return err
 	}
 	env := append(os.Environ(), "CF_HOME="+cfHome, "CF_USERNAME="+cfg.CFUsername, "CF_PASSWORD="+cfg.CFPassword)
 	if cfg.CACert != "" {
-		certPath := "/var/vcap/data/broker-registration/cloud-controller-ca.crt"
+		certPath := filepath.Join(dataDir, "cloud-controller-ca.crt")
 		if err := os.WriteFile(certPath, []byte(cfg.CACert), 0600); err != nil {
-			fatal(err)
+			return err
 		}
 		env = append(env, "SSL_CERT_FILE="+certPath)
 	}
@@ -82,34 +93,35 @@ func main() {
 	if cfg.SkipSSLValidation {
 		args = append(args, "--skip-ssl-validation")
 	}
-	if err := runCF(env, args...); err != nil {
-		fatal(fmt.Errorf("configure Cloud Controller API: %w", err))
+	if _, err := runner.Output(env, args...); err != nil {
+		return fmt.Errorf("configure Cloud Controller API: %w", err)
 	}
-	if err := runCF(env, "auth"); err != nil {
-		fatal(fmt.Errorf("authenticate with Cloud Controller: %w", err))
+	if _, err := runner.Output(env, "auth"); err != nil {
+		return fmt.Errorf("authenticate with Cloud Controller: %w", err)
 	}
-	if os.Args[1] == "register" {
-		if err := registerBroker(env, cfg); err != nil {
-			fatal(err)
+	if mode == "register" {
+		if err := registerBrokerWith(runner, env, cfg); err != nil {
+			return err
 		}
-		if err := enableServiceAccess(env, cfg.BrokerName); err != nil {
-			fatal(fmt.Errorf("enable JuiceFS service access: %w", err))
+		if err := enableServiceAccessWith(runner, env, cfg.BrokerName); err != nil {
+			return fmt.Errorf("enable JuiceFS service access: %w", err)
 		}
 	} else {
-		// The JuiceFS offering defaults to Retain on deprovision; purge only the
-		// catalog offering and broker registration, never customer directories.
-		if err := runCF(env, "purge-service-offering", "-b", cfg.BrokerName, "juicefs", "-f"); err != nil {
+		// Preserve the existing deregistration behavior; the errand does not
+		// invoke backend deletion commands.
+		if _, err := runner.Output(env, "purge-service-offering", "-b", cfg.BrokerName, "juicefs", "-f"); err != nil {
 			fmt.Fprintln(os.Stderr, "purge offering (may already be absent):", err)
 		}
-		if err := runCF(env, "delete-service-broker", cfg.BrokerName, "-f"); err != nil {
-			fatal(fmt.Errorf("delete service broker: %w", err))
+		if _, err := runner.Output(env, "delete-service-broker", cfg.BrokerName, "-f"); err != nil {
+			return fmt.Errorf("delete service broker: %w", err)
 		}
 	}
-	_ = runCF(env, "logout")
+	_, _ = runner.Output(env, "logout")
+	return nil
 }
 
-func enableServiceAccess(env []string, brokerName string) error {
-	output, err := cfOutput(env, "curl", "/v3/service_offerings?names=juicefs")
+func enableServiceAccessWith(runner cli.Runner, env []string, brokerName string) error {
+	output, err := runner.Output(env, "curl", "/v3/service_offerings?names=juicefs")
 	if err != nil {
 		return err
 	}
@@ -124,11 +136,12 @@ func enableServiceAccess(env []string, brokerName string) error {
 	if len(response.Resources) != 1 || response.Resources[0].GUID == "" {
 		return errors.New("JuiceFS service offering not found after broker registration")
 	}
-	return runCF(env, "enable-service-access", "-b", brokerName, "juicefs")
+	_, err = runner.Output(env, "enable-service-access", "-b", brokerName, "juicefs")
+	return err
 }
 
-func registerBroker(env []string, cfg config) error {
-	brokers, err := cfOutput(env, "curl", "/v3/service_brokers?names="+url.QueryEscape(cfg.BrokerName))
+func registerBrokerWith(runner cli.Runner, env []string, cfg config) error {
+	brokers, err := runner.Output(env, "curl", "/v3/service_brokers?names="+url.QueryEscape(cfg.BrokerName))
 	if err != nil {
 		return err
 	}
@@ -141,27 +154,10 @@ func registerBroker(env []string, cfg config) error {
 		return err
 	}
 	if result.Pagination.Total == 0 {
-		return runCF(env, "create-service-broker", cfg.BrokerName, cfg.BrokerUsername, cfg.BrokerPassword, cfg.BrokerURL)
+		_, err = runner.Output(env, "create-service-broker", cfg.BrokerName, cfg.BrokerUsername, cfg.BrokerPassword, cfg.BrokerURL)
+		return err
 	}
-	return runCF(env, "update-service-broker", cfg.BrokerName, cfg.BrokerUsername, cfg.BrokerPassword, cfg.BrokerURL)
-}
-
-func cfOutput(env []string, args ...string) ([]byte, error) {
-	cfPath, err := exec.LookPath("cf")
-	if err != nil {
-		return nil, fmt.Errorf("locate vendored cf CLI: %w", err)
-	}
-	cmd := exec.Command(cfPath, args...)
-	cmd.Env = env
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("cf %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
-	}
-	return output, nil
-}
-
-func runCF(env []string, args ...string) error {
-	_, err := cfOutput(env, args...)
+	_, err = runner.Output(env, "update-service-broker", cfg.BrokerName, cfg.BrokerUsername, cfg.BrokerPassword, cfg.BrokerURL)
 	return err
 }
 

@@ -9,238 +9,218 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/cloudfoundry/juicefs-release/src/cf-volume-broker/fakes"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
+
+func TestBroker(t *testing.T) { RegisterFailHandler(Fail); RunSpecs(t, "Volume Broker Suite") }
 
 const testInstanceID = "6a8cc1ed-a799-43c8-8ea2-38c4cf14fb19"
 
-func TestRecursiveDeletionBoundsWorkersAndVerifiesCompletion(t *testing.T) {
-	path := filepath.Join(t.TempDir(), testInstanceID)
-	if err := os.Mkdir(path, 0700); err != nil {
-		t.Fatal(err)
-	}
-	calls := 0
-	execute := func(args ...string) error {
-		calls++
-		want := []string{"rmr", "--skip-trash", "--threads", "4", path}
-		if len(args) != len(want) {
-			t.Fatalf("unexpected arguments: %v", args)
-		}
-		for i := range want {
-			if args[i] != want[i] {
-				t.Fatalf("unexpected arguments: %v", args)
-			}
-		}
-		return nil
-	}
-	if err := removeJuiceFSDirectory(path, 4, execute); err == nil {
-		t.Fatal("successful CLI exit accepted while directory still exists")
-	}
-	if err := removeJuiceFSDirectory(path, 4, func(args ...string) error {
-		if err := execute(args...); err != nil {
-			return err
-		}
-		return os.RemoveAll(path)
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := removeJuiceFSDirectory(path, 4, execute); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("absent-directory retry: %v", err)
-	}
-	if calls != 2 {
-		t.Fatalf("absent directory invoked CLI: %d", calls)
-	}
-}
-
-func TestQuotaProvisionRetriesRetainOriginalPlan(t *testing.T) {
-	p := plan{ID: "small-id", Name: "small", Description: "Small", CapacityGiB: 1, Inodes: 10, Free: true}
-	b := &broker{root: t.TempDir(), plans: []plan{p}}
-	calls := 0
-	b.applyQuota = func(path string, selected plan) error {
-		calls++
-		if path != "/cf-volumes/"+testInstanceID || selected != p {
-			t.Fatalf("unexpected quota %s %+v", path, selected)
-		}
-		if calls == 1 {
-			return errors.New("backend unavailable")
-		}
-		return nil
-	}
-	provision := func(id string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest(http.MethodPut, "/", bytes.NewBufferString(`{"service_id":"`+serviceID+`","plan_id":"`+id+`"}`))
+var _ = Describe("Service instance lifecycle", func() {
+	var b *broker
+	call := func(handler http.HandlerFunc, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodPut, "/", bytes.NewBufferString(body))
 		r.SetPathValue("id", testInstanceID)
 		w := httptest.NewRecorder()
-		b.provision(w, r)
+		handler(w, r)
 		return w
 	}
-	if w := provision(p.ID); w.Code != http.StatusInternalServerError {
-		t.Fatalf("first status %d", w.Code)
+	provision := func() *httptest.ResponseRecorder {
+		return call(b.provision, `{"service_id":"`+serviceID+`","plan_id":"`+planID+`"}`)
 	}
-	metadata, err := b.readInstanceMetadata(testInstanceID)
-	if err != nil || metadata == nil || metadata.Ready {
-		t.Fatalf("pending metadata %+v %v", metadata, err)
-	}
-	b.plans[0].CapacityGiB = 5
-	if w := provision(p.ID); w.Code != http.StatusCreated {
-		t.Fatalf("retry status %d %s", w.Code, w.Body.String())
-	}
-	if w := provision(p.ID); w.Code != http.StatusOK || calls != 2 {
-		t.Fatalf("idempotent status %d calls %d", w.Code, calls)
-	}
-	if w := provision(planID); w.Code != http.StatusConflict {
-		t.Fatalf("conflict status %d", w.Code)
-	}
-}
-
-func TestPlanValidation(t *testing.T) {
-	p := defaultPlans()[0]
-	for _, plans := range [][]plan{{}, {p, p}, {{ID: "id", Name: "bad name", Description: "bad"}}, {{ID: "id", Name: "small", Description: "bad", CapacityGiB: -1}}} {
-		if err := validatePlans(plans); err == nil {
-			t.Fatalf("invalid plans accepted: %+v", plans)
+	BeforeEach(func() { b = &broker{root: GinkgoT().TempDir(), username: "broker", password: "secret"} })
+	It("provisions, binds, retrieves, unbinds and deprovisions an isolated directory", func() {
+		Expect(provision().Code).To(Equal(http.StatusCreated))
+		Expect(provision().Code).To(Equal(http.StatusOK))
+		path := filepath.Join(b.root, "cf-volumes", testInstanceID)
+		Expect(path).To(BeADirectory())
+		w := call(b.bind, `{"app_guid":"app","parameters":{"mount":"/data"}}`)
+		Expect(w.Code).To(Equal(http.StatusCreated))
+		Expect(w.Body.String()).To(ContainSubstring(`"subdir":"/cf-volumes/` + testInstanceID + `"`))
+		Expect(w.Body.String()).To(ContainSubstring(`"container_dir":"/data"`))
+		Expect(call(b.getInstance, "").Code).To(Equal(http.StatusOK))
+		Expect(call(b.unbind, "").Code).To(Equal(http.StatusOK))
+		Expect(call(b.deprovision, "").Code).To(Equal(http.StatusOK))
+		Expect(path).NotTo(BeAnExistingFile())
+		Expect(b.metadataPath(testInstanceID)).NotTo(BeAnExistingFile())
+		Expect(call(b.deprovision, "").Code).To(Equal(http.StatusOK))
+	})
+	It("retains pending plan limits across failed quota application and retries", func() {
+		p := plan{ID: planID, Name: "small", Description: "small", CapacityGiB: 1, Inodes: 10, Free: true}
+		b.plans = []plan{p}
+		calls := 0
+		b.applyQuota = func(path string, selected plan) error {
+			calls++
+			Expect(path).To(Equal("/cf-volumes/" + testInstanceID))
+			Expect(selected).To(Equal(p))
+			if calls == 1 {
+				return errors.New("quota unavailable")
+			}
+			return nil
 		}
-	}
-	if err := validatePlans(defaultPlans()); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestProvisionBindAndDeprovisionUseInstanceSubdirectory(t *testing.T) {
-	root := t.TempDir()
-	removed := ""
-	b := &broker{root: root, username: "broker", password: "secret", publicURL: "http://broker", removeDirectory: func(path string) error {
-		removed = path
-		return os.RemoveAll(path)
-	}}
-	provision := httptest.NewRequest(http.MethodPut, "/v2/service_instances/"+testInstanceID, bytes.NewBufferString(`{"service_id":"`+serviceID+`","plan_id":"`+planID+`"}`))
-	provision.SetPathValue("id", testInstanceID)
-	w := httptest.NewRecorder()
-	b.provision(w, provision)
-	if w.Code != http.StatusCreated {
-		t.Fatalf("provision status = %d, body = %s", w.Code, w.Body.String())
-	}
-	wantPath := filepath.Join(root, "cf-volumes", testInstanceID)
-	if info, err := os.Stat(wantPath); err != nil || !info.IsDir() {
-		t.Fatalf("provisioned directory missing: %v", err)
-	}
-
-	bind := httptest.NewRequest(http.MethodPut, "/v2/service_instances/"+testInstanceID+"/service_bindings/bind", bytes.NewBufferString(`{"app_guid":"app-guid"}`))
-	bind.SetPathValue("id", testInstanceID)
-	w = httptest.NewRecorder()
-	b.bind(w, bind)
-	if w.Code != http.StatusCreated {
-		t.Fatalf("bind status = %d, body = %s", w.Code, w.Body.String())
-	}
-	var response struct {
-		VolumeMounts []struct {
-			Device struct {
-				VolumeID    string            `json:"volume_id"`
-				MountConfig map[string]string `json:"mount_config"`
-			} `json:"device"`
-		} `json:"volume_mounts"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
-		t.Fatal(err)
-	}
-	if len(response.VolumeMounts) != 1 || response.VolumeMounts[0].Device.VolumeID != testInstanceID || response.VolumeMounts[0].Device.MountConfig["subdir"] != "/cf-volumes/"+testInstanceID {
-		t.Fatalf("unexpected volume mount response: %+v", response)
-	}
-
-	deprovision := httptest.NewRequest(http.MethodDelete, "/v2/service_instances/"+testInstanceID, nil)
-	deprovision.SetPathValue("id", testInstanceID)
-	w = httptest.NewRecorder()
-	b.deprovision(w, deprovision)
-	if w.Code != http.StatusOK || removed != wantPath {
-		t.Fatalf("deprovision status=%d removed=%q want=%q", w.Code, removed, wantPath)
-	}
-}
-
-func TestInstancePathRejectsTraversalAndMalformedIDs(t *testing.T) {
-	b := &broker{root: t.TempDir()}
-	for _, id := range []string{"../outside", "not-a-guid", "00000000-0000-0000-0000-00000000000/"} {
-		if _, err := b.instancePath(id); err == nil {
-			t.Errorf("instancePath(%q) unexpectedly succeeded", id)
+		Expect(provision().Code).To(Equal(http.StatusInternalServerError))
+		metadata, err := b.readInstanceMetadata(testInstanceID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(metadata.Ready).To(BeFalse())
+		b.plans[0].CapacityGiB = 5
+		Expect(provision().Code).To(Equal(http.StatusCreated))
+		Expect(provision().Code).To(Equal(http.StatusOK))
+		Expect(calls).To(Equal(2))
+		Expect(call(b.provision, `{"service_id":"`+serviceID+`","plan_id":"different"}`).Code).To(Equal(http.StatusConflict))
+	})
+	It("keeps metadata when backend deletion fails", func() {
+		Expect(provision().Code).To(Equal(http.StatusCreated))
+		b.removeDirectory = func(string) error { return errors.New("backend unavailable") }
+		Expect(call(b.deprovision, "").Code).To(Equal(http.StatusInternalServerError))
+		Expect(b.metadataPath(testInstanceID)).To(BeAnExistingFile())
+		b.removeDirectory = os.RemoveAll
+		Expect(call(b.deprovision, "").Code).To(Equal(http.StatusOK))
+	})
+	It("rejects malformed IDs, requests, service and plan identifiers", func() {
+		for _, id := range []string{"../outside", "not-a-guid", "00000000-0000-0000-0000-00000000000/"} {
+			_, err := b.instancePath(id)
+			Expect(err).To(HaveOccurred())
 		}
-	}
-}
-
-func TestBindingMountParameter(t *testing.T) {
-	b := &broker{root: t.TempDir()}
-	if err := os.MkdirAll(filepath.Join(b.root, "cf-volumes", testInstanceID), 0770); err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range []struct {
-		name, parameters, wantPath string
-		wantStatus                 int
-	}{
-		{"default", `{}`, "/var/vcap/data/" + testInstanceID, http.StatusCreated},
-		{"custom", `{"mount":"/data"}`, "/data", http.StatusCreated},
-		{"relative", `{"mount":"data"}`, "", http.StatusBadRequest},
-		{"root", `{"mount":"/"}`, "", http.StatusBadRequest},
-		{"traversal", `{"mount":"/data/../etc"}`, "", http.StatusBadRequest},
-		{"empty", `{"mount":""}`, "", http.StatusBadRequest},
-		{"null", `{"mount":null}`, "", http.StatusBadRequest},
-		{"wrong type", `{"mount":42}`, "", http.StatusBadRequest},
-		{"control", `{"mount":"/data\n"}`, "", http.StatusBadRequest},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			r := httptest.NewRequest(http.MethodPut, "/", bytes.NewBufferString(`{"app_guid":"app-guid","parameters":`+tc.parameters+`}`))
-			r.SetPathValue("id", testInstanceID)
+		for _, body := range []string{`broken`, `{}`, `{"service_id":"wrong","plan_id":"` + planID + `"}`, `{"service_id":"` + serviceID + `","plan_id":"unknown"}`} {
+			Expect(call(b.provision, body).Code).NotTo(Equal(http.StatusCreated))
+		}
+		Expect(call(b.bind, `{"app_guid":"app"}`).Code).To(Equal(http.StatusNotFound))
+	})
+	DescribeTable("validates binding mount paths", func(parameters, path string, status int) {
+		Expect(provision().Code).To(Equal(http.StatusCreated))
+		w := call(b.bind, `{"app_guid":"app","parameters":`+parameters+`}`)
+		Expect(w.Code).To(Equal(status))
+		if path != "" {
+			Expect(w.Body.String()).To(ContainSubstring(`"container_dir":"` + path + `"`))
+		}
+	}, Entry("default", `{}`, "/var/vcap/data/"+testInstanceID, http.StatusCreated), Entry("custom", `{"mount":"/data"}`, "/data", http.StatusCreated), Entry("relative", `{"mount":"data"}`, "", http.StatusBadRequest), Entry("root", `{"mount":"/"}`, "", http.StatusBadRequest), Entry("traversal", `{"mount":"/data/../etc"}`, "", http.StatusBadRequest), Entry("empty", `{"mount":""}`, "", http.StatusBadRequest), Entry("null", `{"mount":null}`, "", http.StatusBadRequest), Entry("numeric", `{"mount":42}`, "", http.StatusBadRequest), Entry("control", `{"mount":"/data\n"}`, "", http.StatusBadRequest))
+	It("rejects binding to pending instances or without an app", func() {
+		Expect(provision().Code).To(Equal(http.StatusCreated))
+		Expect(call(b.bind, `{}`).Code).To(Equal(http.StatusBadRequest))
+		Expect(b.writeInstanceMetadata(testInstanceID, &instanceMetadata{Plan: defaultPlans()[0]})).To(Succeed())
+		Expect(call(b.bind, `{"app_guid":"app"}`).Code).To(Equal(http.StatusConflict))
+	})
+	It("exposes the catalog only to authorized callers", func() {
+		for _, credentials := range [][2]string{{"", ""}, {"broker", "wrong"}, {"broker", "secret"}} {
+			r := httptest.NewRequest(http.MethodGet, "/v2/catalog", nil)
+			r.SetBasicAuth(credentials[0], credentials[1])
 			w := httptest.NewRecorder()
-			b.bind(w, r)
-			if w.Code != tc.wantStatus {
-				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+			b.auth(b.catalog)(w, r)
+			if credentials[1] == "secret" {
+				Expect(w.Code).To(Equal(http.StatusOK))
+				Expect(w.Body.String()).To(ContainSubstring(serviceID))
+			} else {
+				Expect(w.Code).To(Equal(http.StatusUnauthorized))
 			}
-			if w.Code == http.StatusCreated {
-				var response struct {
-					VolumeMounts []struct {
-						ContainerDir string `json:"container_dir"`
-						Device       struct {
-							VolumeID    string            `json:"volume_id"`
-							MountConfig map[string]string `json:"mount_config"`
-						} `json:"device"`
-					} `json:"volume_mounts"`
-				}
-				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
-					t.Fatal(err)
-				}
-				mount := response.VolumeMounts[0]
-				if mount.ContainerDir != tc.wantPath || mount.Device.VolumeID != testInstanceID || mount.Device.MountConfig["subdir"] != "/cf-volumes/"+testInstanceID {
-					t.Fatalf("unexpected mount: %+v", mount)
-				}
-			}
-		})
-	}
-}
-
-func TestInstanceDirectoryOwnershipAndRepeatedProvision(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "cf-volumes", testInstanceID)
-	if err := createInstanceDirectory(path, os.Getuid(), os.Getgid()); err != nil {
-		t.Fatal(err)
-	}
-	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm() != 0770 {
-		t.Fatalf("new directory mode: %v, error: %v", info, err)
-	}
-	if err := os.Chmod(path, 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := createInstanceDirectory(path, os.Getuid(), os.Getgid()); err != nil {
-		t.Fatal(err)
-	}
-	info, _ = os.Stat(path)
-	if info.Mode().Perm() != 0700 {
-		t.Fatal("repeated provision changed existing permissions")
-	}
-}
-
-func TestBrokerAuthUsesConstantShapeCredentialCheck(t *testing.T) {
-	b := &broker{username: "broker", password: "secret"}
-	called := false
-	handler := b.auth(func(w http.ResponseWriter, _ *http.Request) { called = true; w.WriteHeader(http.StatusNoContent) })
-	request := httptest.NewRequest(http.MethodGet, "/v2/catalog", nil)
-	request.SetBasicAuth("broker", "secret")
-	w := httptest.NewRecorder()
-	handler(w, request)
-	if !called || w.Code != http.StatusNoContent {
-		t.Fatalf("authorized request status=%d called=%t", w.Code, called)
-	}
-}
+		}
+	})
+	It("rejects invalid or duplicate plans", func() {
+		p := defaultPlans()[0]
+		for _, plans := range [][]plan{{}, {p, p}, {{ID: "id", Name: "bad name", Description: "bad"}}, {{ID: "id", Name: "small", Description: "bad", CapacityGiB: -1}}} {
+			Expect(validatePlans(plans)).NotTo(Succeed())
+		}
+		Expect(validatePlans(defaultPlans())).To(Succeed())
+	})
+	It("keeps existing directory permissions and validates instance metadata", func() {
+		path := filepath.Join(b.root, "cf-volumes", testInstanceID)
+		Expect(createInstanceDirectory(path, os.Getuid(), os.Getgid())).To(Succeed())
+		info, err := os.Stat(path)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(info.Mode().Perm()).To(Equal(os.FileMode(0770)))
+		Expect(os.Chmod(path, 0700)).To(Succeed())
+		Expect(createInstanceDirectory(path, os.Getuid(), os.Getgid())).To(Succeed())
+		info, err = os.Stat(path)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(info.Mode().Perm()).To(Equal(os.FileMode(0700)))
+		Expect(b.writeInstanceMetadata(testInstanceID, &instanceMetadata{Plan: defaultPlans()[0], Ready: true})).To(Succeed())
+		Expect(os.WriteFile(b.metadataPath(testInstanceID), []byte(`broken`), 0600)).To(Succeed())
+		_, err = b.readInstanceMetadata(testInstanceID)
+		Expect(err).To(HaveOccurred())
+	})
+	It("bounds recursive deletion workers and verifies deletion really completed", func() {
+		path := filepath.Join(b.root, "instance")
+		Expect(os.Mkdir(path, 0700)).To(Succeed())
+		runner := &fakes.FakeRunner{}
+		execute := func(args ...string) error { return runner.Run("juicefs", args...) }
+		Expect(removeJuiceFSDirectory(path, 4, execute)).NotTo(Succeed())
+		_, args := runner.RunArgsForCall(0)
+		Expect(args).To(Equal([]string{"rmr", "--skip-trash", "--threads", "4", path}))
+		runner.RunStub = func(string, ...string) error { return os.RemoveAll(path) }
+		Expect(removeJuiceFSDirectory(path, 4, execute)).To(Succeed())
+		Expect(removeJuiceFSDirectory(path, 4, execute)).To(MatchError(os.ErrNotExist))
+		Expect(runner.RunCallCount()).To(Equal(2))
+	})
+	It("passes quota limits to the launcher and skips unlimited plans", func() {
+		runner := &fakes.FakeRunner{}
+		Expect(applyDirectoryQuotaWith(runner, "/cf-volumes/id", plan{})).To(Succeed())
+		Expect(runner.RunCallCount()).To(BeZero())
+		Expect(applyDirectoryQuotaWith(runner, "/cf-volumes/id", plan{CapacityGiB: 2, Inodes: 100})).To(Succeed())
+		path, args := runner.RunArgsForCall(0)
+		Expect(path).To(Equal("/var/vcap/packages/juicefs-launcher/bin/juicefs-launcher"))
+		Expect(args).To(Equal([]string{"quota", "/var/vcap/jobs/juicefs-volume/config/config.json", "/cf-volumes/id", "2", "100"}))
+		runner.RunReturns(errors.New("quota failed"))
+		Expect(applyDirectoryQuotaWith(runner, "/cf-volumes/id", plan{Inodes: 1})).To(MatchError("quota failed"))
+	})
+	It("never removes parents outside the service root or nonempty parents", func() {
+		stop := filepath.Join(b.root, "cf-volumes")
+		nested := filepath.Join(stop, "a", "b")
+		Expect(os.MkdirAll(nested, 0700)).To(Succeed())
+		Expect(removeEmptyParents(nested, stop)).To(Succeed())
+		Expect(stop).To(BeADirectory())
+		Expect(removeEmptyParents(b.root, stop)).NotTo(Succeed())
+		Expect(os.MkdirAll(nested, 0700)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(nested, "state"), nil, 0600)).To(Succeed())
+		Expect(removeEmptyParents(nested, stop)).To(Succeed())
+		Expect(nested).To(BeADirectory())
+	})
+	It("encodes persisted plan metadata", func() {
+		Expect(provision().Code).To(Equal(http.StatusCreated))
+		data, err := os.ReadFile(b.metadataPath(testInstanceID))
+		Expect(err).NotTo(HaveOccurred())
+		var metadata instanceMetadata
+		Expect(json.Unmarshal(data, &metadata)).To(Succeed())
+		Expect(metadata.Ready).To(BeTrue())
+	})
+	It("reports a missing or incomplete instance and malformed paths", func() {
+		Expect(call(b.getInstance, "").Code).NotTo(Equal(http.StatusOK))
+		Expect(serviceInstanceExists(filepath.Join(b.root, "cf-volumes"), testInstanceID)).To(BeFalse())
+		Expect(provision().Code).To(Equal(http.StatusCreated))
+		Expect(serviceInstanceExists(filepath.Join(b.root, "cf-volumes"), testInstanceID)).To(BeTrue())
+		Expect(os.RemoveAll(filepath.Join(b.root, "cf-volumes", testInstanceID))).To(Succeed())
+		Expect(provision().Code).To(Equal(http.StatusInternalServerError))
+		for _, handler := range []http.HandlerFunc{b.provision, b.bind, b.getInstance, b.deprovision} {
+			r := httptest.NewRequest(http.MethodPut, "/", nil)
+			r.SetPathValue("id", "invalid")
+			w := httptest.NewRecorder()
+			handler(w, r)
+			Expect(w.Code).NotTo(Equal(http.StatusOK))
+		}
+	})
+	It("rejects directory creation failures, absent quota backend and corrupted records", func() {
+		b.createDirectory = func(string) error { return errors.New("create failed") }
+		Expect(provision().Code).To(Equal(http.StatusInternalServerError))
+		b.createDirectory = nil
+		Expect(os.Remove(b.metadataPath(testInstanceID))).To(Succeed())
+		b.plans = []plan{{ID: planID, Name: "small", Description: "small", Inodes: 10}}
+		Expect(provision().Code).To(Equal(http.StatusInternalServerError))
+		Expect(os.WriteFile(b.metadataPath(testInstanceID), []byte(`{"plan":{}}`), 0600)).To(Succeed())
+		Expect(provision().Code).To(Equal(http.StatusInternalServerError))
+		Expect(call(b.bind, `{"app_guid":"app"}`).Code).To(Equal(http.StatusInternalServerError))
+	})
+	It("prevents symlink escapes from the instance root", func() {
+		outside := GinkgoT().TempDir()
+		Expect(os.Symlink(outside, filepath.Join(b.root, "cf-volumes"))).To(Succeed())
+		_, err := b.instancePath(testInstanceID)
+		Expect(err).To(HaveOccurred())
+	})
+	It("checks mount readiness and decodes escaped mount fields", func() {
+		Expect(unescapeMountField(`/path\040with\011tab\134slash`)).To(Equal("/path with\ttab\\slash"))
+		_, err := isMounted(b.root)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(waitForMount(b.root, 0*time.Second)).To(HaveOccurred())
+	})
+})

@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -16,6 +15,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/cloudfoundry/juicefs-release/src/cf-volume-broker/internal/backend"
 )
 
 const (
@@ -455,14 +456,16 @@ func (b *broker) writeInstanceMetadata(id string, metadata *instanceMetadata) er
 }
 
 func applyDirectoryQuota(path string, p plan) error {
+	return applyDirectoryQuotaWith(backend.ExecRunner{}, path, p)
+}
+
+func applyDirectoryQuotaWith(runner backend.Runner, path string, p plan) error {
 	if p.CapacityGiB == 0 && p.Inodes == 0 {
 		return nil
 	}
 	// Reuse the mount's rendered BOSH-link configuration, keeping secrets out
 	// of command arguments and broker instance metadata.
-	cmd := exec.Command("/var/vcap/packages/juicefs-launcher/bin/juicefs-launcher", "quota", "/var/vcap/jobs/juicefs-volume/config/config.json", path, strconv.FormatInt(p.CapacityGiB, 10), strconv.FormatInt(p.Inodes, 10))
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	return cmd.Run()
+	return runner.Run("/var/vcap/packages/juicefs-launcher/bin/juicefs-launcher", "quota", "/var/vcap/jobs/juicefs-volume/config/config.json", path, strconv.FormatInt(p.CapacityGiB, 10), strconv.FormatInt(p.Inodes, 10))
 }
 
 func createInstanceDirectory(path string, uid, gid int) error {
@@ -484,12 +487,7 @@ func createInstanceDirectory(path string, uid, gid int) error {
 }
 
 func execJuiceFS(args ...string) error {
-	cmd := exec.Command("/var/vcap/packages/juicefs/bin/juicefs", args...)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("juicefs %s: %w", strings.Join(args, " "), err)
-	}
-	return nil
+	return backend.ExecRunner{}.Run("/var/vcap/packages/juicefs/bin/juicefs", args...)
 }
 
 func (b *broker) bind(w http.ResponseWriter, r *http.Request) {
