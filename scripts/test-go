@@ -11,5 +11,5 @@ for module in juicefs-launcher cf-volume-broker cf-volume-driver broker-registra
       -coverpkg=./,./internal/... -coverprofile="$output/$module.out" \
       ./... -ginkgo.randomize-all -ginkgo.seed="$seed" || exit $?
     go tool cover -func="$output/$module.out"
-  )
+  ) || exit $?
 done

@@ -106,29 +106,40 @@ func main() {
 	if configPath == "" {
 		configPath = "/var/vcap/jobs/juicefs-broker/config/config.json"
 	}
-	contents, err := os.ReadFile(configPath)
+	server, err := configuredServer(configPath, waitForMount)
 	if err != nil {
 		log.Fatal(err)
 	}
+	log.Printf("starting JuiceFS service broker on %s", server.Addr)
+	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Fatal(err)
+	}
+}
+
+func configuredServer(configPath string, wait func(string, time.Duration) error) (*http.Server, error) {
+	contents, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, err
+	}
 	var cfg config
 	if err := json.Unmarshal(contents, &cfg); err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 	if cfg.Broker.Plans == nil {
 		cfg.Broker.Plans = defaultPlans()
 	}
 	if err := validatePlans(cfg.Broker.Plans); err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 	if cfg.Broker.Root == "" || cfg.Broker.Username == "" || cfg.Broker.Password == "" {
-		log.Fatal("broker root, username and password are required")
+		return nil, errors.New("broker root, username and password are required")
 	}
 	root, err := filepath.Abs(cfg.Broker.Root)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 	if err := os.MkdirAll(root, 0750); err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
 	b := &broker{root: root, username: cfg.Broker.Username, password: cfg.Broker.Password, publicURL: cfg.Broker.PublicURL, cleanEmptyDirs: cfg.Broker.CleanEmptyDirs, plans: cfg.Broker.Plans}
@@ -141,7 +152,7 @@ func main() {
 		deletionThreads = 4
 	}
 	if deletionThreads < 1 || deletionThreads > 255 {
-		log.Fatal("deletionThreads must be between 1 and 255")
+		return nil, errors.New("deletionThreads must be between 1 and 255")
 	}
 	b.removeDirectory = func(path string) error {
 		return removeJuiceFSDirectory(path, deletionThreads, execJuiceFS)
@@ -150,8 +161,8 @@ func main() {
 	if mountTimeout <= 0 {
 		mountTimeout = 60 * time.Second
 	}
-	if err := waitForMount(root, mountTimeout); err != nil {
-		log.Fatal(err)
+	if err := wait(root, mountTimeout); err != nil {
+		return nil, err
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
@@ -166,11 +177,7 @@ func main() {
 	if addr == "" {
 		addr = "0.0.0.0:8080"
 	}
-	log.Printf("starting JuiceFS service broker on %s", addr)
-	server := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatal(err)
-	}
+	return &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}, nil
 }
 
 func waitForMount(path string, timeout time.Duration) error {

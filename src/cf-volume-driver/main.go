@@ -98,34 +98,9 @@ func main() {
 	if baseConfigPath == "" {
 		baseConfigPath = "/var/vcap/jobs/juicefs-volume-driver/config/config.json"
 	}
-	baseContents, err := os.ReadFile(baseConfigPath)
+	d, err := configuredDriver(baseConfigPath, "/var/vcap/data/juicefs-volume-driver/state.json")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "read driver config:", err)
-		os.Exit(1)
-	}
-	var baseConfig map[string]any
-	if err := json.Unmarshal(baseContents, &baseConfig); err != nil {
-		fmt.Fprintln(os.Stderr, "parse driver config:", err)
-		os.Exit(1)
-	}
-	volumeConfig, ok := baseConfig["volume"].(map[string]any)
-	if !ok {
-		fmt.Fprintln(os.Stderr, "driver config has no volume object")
-		os.Exit(1)
-	}
-	mountRoot, _ := volumeConfig["mountPoint"].(string)
-	cacheRoot, _ := volumeConfig["cacheDir"].(string)
-	if mountRoot == "" || cacheRoot == "" {
-		fmt.Fprintln(os.Stderr, "driver mount and cache paths are required")
-		os.Exit(1)
-	}
-	d := &driver{
-		volumes:    map[string]*volume{},
-		statePath:  "/var/vcap/data/juicefs-volume-driver/state.json",
-		configPath: baseConfigPath,
-		mountRoot:  mountRoot,
-		cacheRoot:  cacheRoot,
-		baseConfig: baseConfig,
+		log.Fatal(err)
 	}
 	if err := d.load(); err != nil {
 		log.Fatal("restore driver state:", err)
@@ -136,27 +111,13 @@ func main() {
 	if err := d.recoverMounts(); err != nil {
 		log.Fatal("recover mounts:", err)
 	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /Plugin.Activate", func(w http.ResponseWriter, _ *http.Request) {
-		write(w, activateResponse{Implements: []string{"VolumeDriver"}})
-	})
-	mux.HandleFunc("POST /VolumeDriver.Create", d.handleCreate)
-	mux.HandleFunc("POST /VolumeDriver.Remove", d.handleRemove)
-	mux.HandleFunc("POST /VolumeDriver.Mount", d.handleMount)
-	mux.HandleFunc("POST /VolumeDriver.Unmount", d.handleUnmount)
-	mux.HandleFunc("POST /VolumeDriver.Get", d.handleGet)
-	mux.HandleFunc("POST /VolumeDriver.Path", d.handlePath)
-	mux.HandleFunc("POST /VolumeDriver.List", d.handleList)
-	mux.HandleFunc("POST /VolumeDriver.Capabilities", func(w http.ResponseWriter, _ *http.Request) {
-		write(w, map[string]any{"Capabilities": map[string]string{"Scope": "local"}})
-	})
+	mux := d.routes()
 
 	addr := os.Getenv("JUICEFS_DRIVER_ADDR")
 	if addr == "" {
 		addr = "127.0.0.1:7591"
 	}
 	server := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
-	d.stop = make(chan struct{})
 	serverErr := make(chan error, 1)
 	go func() { serverErr <- server.ListenAndServe() }()
 	signals := make(chan os.Signal, 1)
@@ -174,6 +135,46 @@ func main() {
 		cancel()
 	}
 	d.unmountAll()
+}
+
+func configuredDriver(configPath, statePath string) (*driver, error) {
+	contents, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("read driver config: %w", err)
+	}
+	var cfg map[string]any
+	if err = json.Unmarshal(contents, &cfg); err != nil {
+		return nil, fmt.Errorf("parse driver config: %w", err)
+	}
+	volumeConfig, ok := cfg["volume"].(map[string]any)
+	if !ok {
+		return nil, errors.New("driver config has no volume object")
+	}
+	mountRoot, _ := volumeConfig["mountPoint"].(string)
+	cacheRoot, _ := volumeConfig["cacheDir"].(string)
+	if mountRoot == "" || cacheRoot == "" {
+		return nil, errors.New("driver mount and cache paths are required")
+	}
+	return &driver{volumes: map[string]*volume{}, statePath: statePath, configPath: configPath, mountRoot: mountRoot, cacheRoot: cacheRoot, baseConfig: cfg, stop: make(chan struct{})}, nil
+}
+
+func (d *driver) routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /Plugin.Activate", func(w http.ResponseWriter, _ *http.Request) {
+		write(w, activateResponse{Implements: []string{"VolumeDriver"}})
+	})
+	mux.HandleFunc("POST /VolumeDriver.Create", d.handleCreate)
+	mux.HandleFunc("POST /VolumeDriver.Remove", d.handleRemove)
+	mux.HandleFunc("POST /VolumeDriver.Mount", d.handleMount)
+	mux.HandleFunc("POST /VolumeDriver.Unmount", d.handleUnmount)
+	mux.HandleFunc("POST /VolumeDriver.Get", d.handleGet)
+	mux.HandleFunc("POST /VolumeDriver.Path", d.handlePath)
+	mux.HandleFunc("POST /VolumeDriver.List", d.handleList)
+	mux.HandleFunc("POST /VolumeDriver.Capabilities", func(w http.ResponseWriter, _ *http.Request) {
+		write(w, map[string]any{"Capabilities": map[string]string{"Scope": "local"}})
+	})
+
+	return mux
 }
 
 func mountWithOverrides(configPath, mountpoint, cacheDir string) error {
