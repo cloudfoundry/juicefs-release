@@ -5,7 +5,7 @@ This is the `juicefs` BOSH release. `src/juicefs` is a pinned upstream Git submo
 `nginx_webdav` is vendored from CAPI release and powers our own singleton
 `blobstore` job; re-vendor it from `../capi-release` when upgrading CAPI's package.
 The vendored package locks live in `packages/nginx_webdav/spec.lock`,
-`packages/golang-1.25-linux/spec.lock`, and `packages/cf-cli-8-linux/spec.lock`.
+and `packages/golang-1.25-linux/spec.lock`.
 Their build indexes in `.final_builds/` are tracked; package blobs are stored in
 the GCS release blobstore.
 Run `git submodule update --init --recursive` after cloning. Upstream Go submodules use
@@ -22,6 +22,8 @@ Do not check generated vendor trees for upstream submodules into Git.
 separate packages and Go modules under matching `src/` directories; these compile
 offline against their checked-in vendor trees. Both broker
 registration errands use the single `broker-registration` binary/package.
+Registration uses the vendored go-cfclient v3 API client, not a packaged CF CLI;
+wait for asynchronous broker jobs and scope catalog queries to the broker GUID.
 `src/azure-postgres-auth-proxy` is pinned to v0.1.5.
 `src/certifi` supplies packaged public CA roots. The optional Azure proxy uses
 BPM, listens only on loopback, and publishes a local-only `azure_postgres_proxy`

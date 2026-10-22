@@ -6,7 +6,7 @@ templates:
   config.json.erb: config/config.json
 packages:
 - broker-registration
-- cf-cli-8-linux
+- ca-certificates
 consumes:
 - name: juicefs_broker
   type: juicefs_broker
@@ -33,5 +33,5 @@ properties:
     description: Additional trust roots for authentication endpoints advertised by Cloud Controller.
     default: []
   juicefs.broker.skip_ssl_validation:
-    description: Skip TLS verification for the broker endpoint.
+    description: Unsupported for HTTPS brokers; Cloud Controller verifies broker TLS and must trust its certificate.
     default: false

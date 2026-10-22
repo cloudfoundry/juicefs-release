@@ -104,7 +104,6 @@ tracked so a fresh clone can download the pinned package blobs. The locks are:
 
 - `packages/golang-1.25-linux/spec.lock`
 - `packages/nginx_webdav/spec.lock` — vendored from CAPI release
-- `packages/cf-cli-8-linux/spec.lock`
 
 Run `bosh sync-blobs` to populate the local blob cache. Uploaders configure GCS
 credentials in ignored `config/private.yml`, then run `bosh upload-blobs` after
@@ -146,6 +145,14 @@ The registration errand creates or updates the broker and enables access to its
 plans. It trusts both Cloud Controller's linked CA and the configured router CA
 used by the public authentication endpoint. The supplied ops file uses CF's
 existing `cf_admin_password` variable.
+
+Both registration errands use the vendored `cloudfoundry/go-cfclient/v3` library
+directly; no CF CLI is packaged or executed. Credentials and tokens remain in
+memory, and no `CF_HOME` state is written. Registration waits for asynchronous
+broker jobs, then enables every JuiceFS plan using the plan visibility API.
+Catalog discovery is scoped to the configured broker GUID. Deregistration deletes
+unused plans and offerings before deleting the broker; an in-use plan causes an
+error rather than purging service instances or bypassing backend deprovisioning.
 
 ## Use a volume
 
