@@ -1,5 +1,13 @@
 # JuiceFS BOSH release
 
+> **Disclaimer — pre-GA:** This repository is part of the Cloud Foundry
+> [Agentic Workloads Working Group](https://github.com/cloudfoundry/community/blob/main/toc/working-groups/agentic-runtime.md).
+> Its intended use is to provide persistent storage for agents running on top of
+> Cloud Foundry. The release is not yet generally available (GA), and breaking
+> changes may still occur. For the agent workloads targeted here, adapting to
+> these changes should be manageable in most cases; plan for that flexibility
+> when adopting the release.
+
 A proof-of-concept [JuiceFS](https://juicefs.com/) volume service for Cloud Foundry.
 The release includes a service broker, a Diego volume driver, and a shared
 filesystem with PostgreSQL or MySQL metadata and WebDAV, S3, or Azure Blob object storage.
