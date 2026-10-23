@@ -1,0 +1,27 @@
+- type: replace
+  path: /instance_groups/name=juicefs-acceptance-tests?
+  value:
+    name: juicefs-acceptance-tests
+    azs: [z1]
+    instances: 1
+    lifecycle: errand
+    vm_type: default
+    stemcell: default
+    networks: [{name: default}]
+    jobs:
+    - name: juicefs-acceptance-tests
+      release: juicefs
+      consumes:
+        cloud_controller_https_endpoint: {from: cloud_controller_https_endpoint}
+      properties:
+        juicefs:
+          acceptance:
+            apps_domain: ((juicefs_acceptance_apps_domain))
+          cf:
+            username: admin
+            password: ((cf_admin_password))
+            additional_ca_certificates: [((router_ssl.ca))]
+            skip_ssl_validation: false
+- type: replace
+  path: /releases/name=juicefs/version
+  value: ((juicefs_release_version))

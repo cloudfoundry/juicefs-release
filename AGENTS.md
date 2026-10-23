@@ -17,6 +17,12 @@ Release-owned Go modules check in their vendor directories, go.mod/go.sum,
 and Counterfeiter-generated fakes. Use Ginkgo v2/Gomega for behavioral suites.
 Run `scripts/test-go` for randomized race tests and coverage excluding fakes;
 run `scripts/generate-fakes` to regenerate fakes using the pinned vendored tool.
+`juicefs-acceptance-tests` packages a static test app and a compiled Ginkgo BOSH
+errand. Local checks include a TLS CF API fixture; the live suite requires
+`JUICEFS_ACCEPTANCE_CONFIG`. CI orchestration lives in `scripts/acceptance/run`;
+see `docs/acceptance-testing.md`. The workflow currently uses the standard
+GitHub-hosted `ubuntu-latest` runner. Keep instant-bosh CLI/image pins together in
+`scripts/acceptance/versions.env`. Run the orchestration only on disposable hosts.
 Do not check generated vendor trees for upstream submodules into Git.
 `packages/juicefs` contains only the upstream client. Release-owned tools have
 separate packages and Go modules under matching `src/` directories; these compile

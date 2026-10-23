@@ -6,6 +6,8 @@ azure-vars.yml
 src/juicefs-deps/
 src/azure-postgres-auth-proxy-deps/
 .devbox/
+.acceptance/
+.acceptance-tools/
 dev_releases
 releases/*.tgz
 releases/**/*.tgz
