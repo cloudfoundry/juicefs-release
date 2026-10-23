@@ -28,7 +28,10 @@ case "${1:-}" in
     # The director's pre-start hook chgrps this bind-mounted host socket to
     # vcap (GID 1000). Keep the invoking user authorized after that change.
     sudo setfacl -m "u:$(id -u):rw" /var/run/docker.sock
-    ibosh docker start --image "$INSTANT_BOSH_IMAGE"
+    # CF deploy uploads its exact compiled-release stemcell. Resolving the
+    # startup default "latest" scans registry version tags serially and can
+    # exhaust the startup timeout before CF deployment even begins.
+    ibosh docker start --image "$INSTANT_BOSH_IMAGE" --skip-stemcell-upload
     load_env
     bosh env
     ;;

@@ -35,6 +35,10 @@ run. CF release and compiled-stemcell versions come from that CLI's embedded
 cf-deployment; the JuiceFS deployment reuses its installed DNS releases and
 stemcell. CI uses a 10 GiB backend disk.
 
+Director startup skips the default `latest` stemcell upload, whose registry
+version-tag discovery can be slow. `ibosh cf deploy` uploads the exact stemcell
+required by its compiled CF releases instead.
+
 ## What the errand verifies
 
 The release-owned Go suite uses vendored go-cfclient v3 and Ginkgo/Gomega. It:
