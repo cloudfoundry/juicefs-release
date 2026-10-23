@@ -14,9 +14,13 @@ deployment fits within its resources. Diagnostics include host memory, disk,
 Docker disk usage, and container statistics to identify capacity limits.
 
 Local runners need Linux x64, Docker Engine, passwordless sudo, the host FUSE
-kernel module/device, and support for privileged containers and nested Garden
+kernel module/device, `setfacl` (the `acl` package), and support for privileged containers and nested Garden
 containers. Use an ephemeral, single-job runner: instant-bosh uses fixed resource
 names and ports.
+
+Startup grants the invoking user a Docker socket ACL: the director's pre-start
+hook changes the socket's group to vcap (GID 1000), including on the host through
+the bind mount. The ACL preserves runner access after this group change.
 
 The workflow uses `pull_request` with read-only repository permissions. It does
 not need CF credentials: the disposable director generates them. The release's

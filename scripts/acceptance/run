@@ -25,6 +25,9 @@ case "${1:-}" in
     fi
     test -c /dev/fuse
     df -h /var/lib/docker "$work"
+    # The director's pre-start hook chgrps this bind-mounted host socket to
+    # vcap (GID 1000). Keep the invoking user authorized after that change.
+    sudo setfacl -m "u:$(id -u):rw" /var/run/docker.sock
     ibosh docker start --image "$INSTANT_BOSH_IMAGE"
     load_env
     bosh env
