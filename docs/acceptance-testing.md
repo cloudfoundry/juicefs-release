@@ -12,6 +12,8 @@ The workflow currently uses the standard GitHub-hosted **`ubuntu-latest`** runne
 no runner variable is required. Initial runs will establish how far the full CF
 deployment fits within its resources. Diagnostics include host memory, disk,
 Docker disk usage, and container statistics to identify capacity limits.
+The acceptance job adds an 8 GiB swap file using shell commands, leaving the
+runner's existing disk layout intact.
 
 Local runners need Linux x64, Docker Engine, passwordless sudo, the host FUSE
 kernel module/device, `setfacl` (the `acl` package), and support for privileged containers and nested Garden

@@ -18,11 +18,15 @@ jobs:
     env:
       GOTOOLCHAIN: local
     steps:
-    - name: Maximize build space
-      uses: easimon/maximize-build-space@master
-      with:
-        root-reserve-mb: 512
-        swap-size-mb: 8192
+    - name: Add 8 GiB swap
+      run: |
+        sudo install -m 600 /dev/null /swapfile-juicefs
+        sudo fallocate -l 8G /swapfile-juicefs
+        sudo mkswap /swapfile-juicefs
+        sudo swapon /swapfile-juicefs
+        swapon --show
+        free -h
+        df -h /
     - uses: actions/checkout@v4
       with:
         submodules: recursive
