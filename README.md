@@ -17,6 +17,15 @@ Applications can provision a directory, bind it at a chosen container path, and
 keep files across container restarts. BOSH-configurable service plans apply
 directory capacity and inode quotas.
 
+## Acceptance testing
+
+The [CF volume acceptance workflow](.github/workflows/acceptance.yml) starts a
+disposable instant-bosh director and Cloud Foundry on a standard GitHub-hosted Ubuntu runner.
+Its BOSH errand provisions and binds a JuiceFS service, writes a random GUID
+through an app endpoint, restarts the app, and confirms the GUID persists.
+See [acceptance testing](docs/acceptance-testing.md) for runner setup, local
+execution, and reports.
+
 ## Architecture
 
 ```text

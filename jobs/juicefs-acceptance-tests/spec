@@ -1,0 +1,32 @@
+---
+name: juicefs-acceptance-tests
+description: Provisions and binds a JuiceFS volume and verifies an app's file survives a CAPI restart.
+templates:
+  run.erb: bin/run
+  config.json.erb: config/config.json
+packages:
+- juicefs-acceptance-tests
+- ca-certificates
+consumes:
+- name: cloud_controller_https_endpoint
+  type: cloud_controller_https_endpoint
+properties:
+  juicefs.acceptance.apps_domain:
+    description: Shared CF application domain used for the test route.
+  juicefs.acceptance.broker_name:
+    description: Registered JuiceFS broker name.
+    default: juicefs
+  juicefs.acceptance.plan_name:
+    description: CF-facing JuiceFS plan to exercise.
+    default: shared
+  juicefs.cf.username:
+    description: CF administrator authorized to create and delete test orgs.
+    default: admin
+  juicefs.cf.password:
+    description: CF administrator password.
+  juicefs.cf.additional_ca_certificates:
+    description: Additional CA roots for UAA and application routes.
+    default: []
+  juicefs.cf.skip_ssl_validation:
+    description: Skip TLS validation for CF and application routes.
+    default: false

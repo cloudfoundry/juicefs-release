@@ -1,0 +1,16 @@
+# Reuse the stemcell and DNS releases installed by ibosh cf deploy.
+- type: replace
+  path: /stemcells/alias=default/version
+  value: ((acceptance_stemcell_version))
+- type: replace
+  path: /releases/name=bosh-dns/version
+  value: ((acceptance_dns_version))
+- type: replace
+  path: /releases/name=bosh-dns-aliases/version
+  value: ((acceptance_dns_aliases_version))
+- type: replace
+  path: /releases/name=juicefs/version
+  value: ((juicefs_release_version))
+- type: replace
+  path: /instance_groups/name=juicefs-backends/persistent_disk
+  value: 10240

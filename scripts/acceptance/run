@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+source scripts/acceptance/versions.env
+work=${ACCEPTANCE_WORK_DIR:-$root/.acceptance}
+artifacts="$work/artifacts"
+mkdir -p "$work" "$artifacts"
+chmod 700 "$work"
+export BOSH_NON_INTERACTIVE=true BOSH_NO_COLOR=true
+
+load_env() {
+  # Credentials stay in this process; never write print-env output to CI logs.
+  local environment
+  environment=$(ibosh docker print-env) || return $?
+  eval "$environment"
+}
+
+case "${1:-}" in
+  start)
+    docker info --format '{{.OSType}}/{{.Architecture}}'
+    test "$(uname -m)" = x86_64
+    if [[ ! -c /dev/fuse ]]; then
+      sudo modprobe fuse
+    fi
+    test -c /dev/fuse
+    df -h /var/lib/docker "$work"
+    # The director's pre-start hook chgrps this bind-mounted host socket to
+    # vcap (GID 1000). Keep the invoking user authorized after that change.
+    sudo setfacl -m "u:$(id -u):rw" /var/run/docker.sock
+    # CF deploy uploads its exact compiled-release stemcell. Resolving the
+    # startup default "latest" scans registry version tags serially and can
+    # exhaust the startup timeout before CF deployment even begins.
+    ibosh docker start --image "$INSTANT_BOSH_IMAGE" --skip-stemcell-upload
+    load_env
+    bosh env
+    ;;
+  deploy-cf)
+    load_env
+    ibosh cf deploy
+    ;;
+  build-release)
+    bosh sync-blobs
+    bosh create-release --force --tarball="$work/juicefs.tgz"
+    tar -xOf "$work/juicefs.tgz" release.MF > "$work/release.yml"
+    ;;
+  deploy-service)
+    load_env
+    bosh upload-release "$work/juicefs.tgz"
+    version=$(bosh interpolate "$work/release.yml" --path /version)
+    bosh -d cf manifest > "$work/cf.yml"
+    domain=$(bosh interpolate "$work/cf.yml" --path /instance_groups/name=control/jobs/name=cloud_controller_ng/properties/system_domain)
+    stemcell=$(bosh interpolate "$work/cf.yml" --path /stemcells/alias=default/version)
+    dns=$(bosh interpolate "$work/cf.yml" --path /releases/name=bosh-dns/version)
+    aliases=$(bosh interpolate "$work/cf.yml" --path /releases/name=bosh-dns-aliases/version)
+    bosh -d juicefs deploy manifests/juicefs.yml \
+      -o operations/instant-bosh-acceptance.yml \
+      -v juicefs_release_version="$version" \
+      -v acceptance_stemcell_version="$stemcell" \
+      -v acceptance_dns_version="$dns" \
+      -v acceptance_dns_aliases_version="$aliases"
+    bosh update-config --type=runtime --name=juicefs runtime-config/juicefs-volume-driver.yml \
+      -v juicefs_release_version="$version"
+    bosh -d cf deploy "$work/cf.yml" \
+      -o operations/enable-juicefs-cf-volume-service.yml \
+      -o operations/enable-juicefs-acceptance-tests.yml \
+      -v juicefs_release_version="$version" \
+      -v juicefs_acceptance_apps_domain="$domain"
+    bosh -d cf run-errand register-juicefs-broker --download-logs --logs-dir="$artifacts"
+    ;;
+  test)
+    load_env
+    # Keep the VM so diagnostics can retrieve the JUnit report even on test failure.
+    bosh -d cf run-errand juicefs-acceptance-tests --keep-alive --download-logs --logs-dir="$artifacts"
+    ;;
+  diagnostics)
+    # Every operation is best-effort: an early deployment failure may leave no VMs.
+    free -h > "$artifacts/host-memory.log" 2>&1 || true
+    df -h > "$artifacts/host-disk.log" 2>&1 || true
+    docker system df > "$artifacts/docker-disk.log" 2>&1 || true
+    docker stats --no-stream > "$artifacts/docker-stats.log" 2>&1 || true
+    docker ps -a --format '{{.Names}} {{.Status}}' > "$artifacts/docker-containers.log" 2>&1 || true
+    load_env || exit 0
+    bosh -d cf scp juicefs-acceptance-tests/0:/var/vcap/sys/log/juicefs-acceptance-tests/junit.xml "$artifacts/junit.xml" || true
+    bosh tasks --recent=10 --json > "$work/tasks.json" || true
+    if [[ -s "$work/tasks.json" ]]; then
+      jq -r '.Tables[].Rows[] | select(.state == "error") | .id' "$work/tasks.json" | while read -r task; do
+        bosh task "$task" > "$artifacts/task-$task.log" 2>&1 || true
+      done
+    fi
+    for deployment in cf juicefs; do
+      bosh -d "$deployment" instances --ps > "$artifacts/$deployment-instances.log" 2>&1 || true
+      bosh -d "$deployment" logs --dir="$artifacts" --only=juicefs-acceptance-tests,juicefs-volume,juicefs-volume-driver,juicefs-broker,register-broker || true
+    done
+    ;;
+  destroy)
+    ibosh docker destroy --force
+    ;;
+  *)
+    printf 'Usage: %s {start|deploy-cf|build-release|deploy-service|test|diagnostics|destroy}\n' "$0" >&2
+    exit 2
+    ;;
+esac

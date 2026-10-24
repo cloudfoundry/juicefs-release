@@ -33,6 +33,28 @@ class RenderContext
   end
 end
 
+class AcceptanceTemplatesTest < Minitest::Test
+  def test_cf_link_and_extra_roots_are_rendered_without_losing_json_escaping
+    cc = FakeLink.new({
+      'cc.internal_service_hostname' => 'api.service.cf.internal',
+      'cc.public_tls.port' => 9024,
+      'cc.public_tls.ca_cert' => "cc-root\n"
+    })
+    properties = {
+      'juicefs.cf.password' => "secret\"with\nnewlines",
+      'juicefs.cf.additional_ca_certificates' => ['router-root'],
+      'juicefs.acceptance.apps_domain' => 'apps.example.com'
+    }
+    rendered = RenderContext.new('juicefs-acceptance-tests', properties, {'cloud_controller_https_endpoint' => cc}).render('juicefs-acceptance-tests', 'config.json.erb')
+    config = JSON.parse(rendered)
+    assert_equal 'https://api.service.cf.internal:9024', config['apiURL']
+    assert_equal "cc-root\n\nrouter-root", config['caCert']
+    assert_equal properties['juicefs.cf.password'], config['password']
+    assert_equal 'apps.example.com', config['appsDomain']
+    assert_equal false, config['skipSSLValidation']
+  end
+end
+
 class FakeLink
   attr_reader :instances
 

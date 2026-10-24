@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export SSL_CERT_FILE=/var/vcap/packages/ca-certificates/certs/ca-certificates.crt
+export SSL_CERT_DIR=/var/vcap/packages/ca-certificates/no-system-certs
+export JUICEFS_ACCEPTANCE_CONFIG=/var/vcap/jobs/juicefs-acceptance-tests/config/config.json
+reports=/var/vcap/sys/log/juicefs-acceptance-tests
+mkdir -p "$reports"
+exec /var/vcap/packages/juicefs-acceptance-tests/bin/acceptance.test \
+  -test.v -test.timeout=60m -ginkgo.v -ginkgo.randomize-all \
+  -ginkgo.junit-report="$reports/junit.xml"
