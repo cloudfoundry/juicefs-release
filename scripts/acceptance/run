@@ -80,13 +80,18 @@ case "${1:-}" in
     docker system df > "$artifacts/docker-disk.log" 2>&1 || true
     docker stats --no-stream > "$artifacts/docker-stats.log" 2>&1 || true
     docker ps -a --format '{{.Names}} {{.Status}}' > "$artifacts/docker-containers.log" 2>&1 || true
+    # These do not depend on a healthy director API. Capture the actual job
+    # files as well as container output, which may contain only nginx 502s.
+    timeout 60 docker logs --tail 2000 instant-bosh > "$artifacts/director-container.log" 2>&1 || true
+    timeout 60 docker exec instant-bosh ps aux > "$artifacts/director-processes.log" 2>&1 || true
+    timeout 120 docker exec instant-bosh tar -czf - -C /var/vcap/sys/log . > "$artifacts/director-logs.tgz" 2> "$artifacts/director-log-collection.log" || true
     load_env || exit 0
     bosh -d cf scp juicefs-acceptance-tests/0:/var/vcap/sys/log/juicefs-acceptance-tests/junit.xml "$artifacts/junit.xml" || true
     bosh tasks --recent=10 --json > "$work/tasks.json" || true
     if [[ -s "$work/tasks.json" ]]; then
-      jq -r '.Tables[].Rows[] | select(.state == "error") | .id' "$work/tasks.json" | while read -r task; do
+      jq -r '.Tables[]?.Rows[]? | select(.state == "error") | .id' "$work/tasks.json" | while read -r task; do
         bosh task "$task" --debug > "$artifacts/task-$task.log" 2>&1 || true
-      done
+      done || true
     fi
     # Collect the failing CF cell first, including rep, Garden, agent and system
     # logs. Filtering for JuiceFS jobs yields empty archives before CF deploys.
