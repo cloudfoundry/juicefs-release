@@ -57,8 +57,16 @@ This sources `bosh.env`, runs `bosh create-release --force`, uploads that releas
 updates the named `juicefs` runtime-config with `bosh update-config` using the
 newly built release's explicit version, deploys the JuiceFS release, then runs
 `bosh deploy -n -d cf <(bosh manifest -d cf)` so pending runtime-config changes
-are applied. The JuiceFS manifest contains
-`juicefs-backends` and `juicefs-broker` instance groups and uses `version: latest` for the
+are applied. `deployment/juicefs.yml` contains the `juicefs-broker` group and accepts
+`juicefs_metadata` and `juicefs_storage` objects for external backends.
+`deployment/operations/non-ha-validation.yml` adds singleton Postgres/WebDAV,
+their variables and DNS aliases, and overrides those backend objects. Apply it
+before `instant-bosh-acceptance.yml` or disk-expansion ops. The CF aliases are in
+`deployment/operations/cf/non-ha-validation.yml`. Instant-bosh embeds DNS only
+in CF; `deployment/operations/misc/ibosh-bosh-dns-fix.yml` adds it to JuiceFS,
+reusing global `/dns_*` certificates without declaring variables. Other directors
+should use the upstream DNS runtime-config. See `deployment/runtime-configs/README.md`.
+The manifest uses `version: latest` for the
 `juicefs` release. The director must have an
 `ubuntu-noble` stemcell and cloud-config with `z1`, `default` network and
 `default` VM type. Postgres and BPM are pinned external releases; BPM is used by
@@ -129,8 +137,13 @@ records make failed quota application retryable; completed provision retries do
 not change quotas. Existing pre-quota directories retain the unlimited shared
 plan. The broker's instance metadata lives on JuiceFS, not on its ephemeral disk.
 
-`operations/enable-juicefs-cf-volume-service.yml` enables CAPI volume services
-and defines registration/deregistration errands. The CF deployment is separate
+`deployment/operations/cf/enable-volume-services.yml` enables CAPI volume services.
+The main JuiceFS manifest colocates `register-broker` and `deregister-broker`
+as errands on `juicefs-broker`. They consume the local broker link and CF's shared
+HTTPS endpoint; apply `deployment/operations/cf/share-cloud-controller.yml`
+before deploying JuiceFS. `misc/ibosh-cf-credentials.yml` references existing CF
+credentials in instant-bosh; other environments supply `juicefs_cf_password` and
+`juicefs_cf_ca_certificates`. The CF deployment is separate
 from the JuiceFS deployment. The JuiceFS deployment marks Postgres, WebDAV, the
 full-root mountpoint, and broker as shared link providers. The CF runtime-config
 consumes the broker mounter's shared `juicefs_mount` link from deployment
@@ -138,12 +151,12 @@ consumes the broker mounter's shared `juicefs_mount` link from deployment
 mysql), `juicefs.storage` (webdav, s3 or wasb/Azure Blob), and the filesystem name. The Diego
 driver is link-only, with no independent backend overrides. Quota
 commands reuse the mounter's rendered configuration. The colocated broker
-consumes its mountpoint link. `operations/use-mysql-s3.yml` shows external
-backend configuration; `operations/use-azure-blob.yml` configures Azure Blob.
+consumes its mountpoint link. `deployment/operations/use-mysql-s3.yml` shows external
+backend configuration; `deployment/operations/use-azure-blob.yml` configures Azure Blob.
 Changing properties does not migrate existing data. The CF control group has
 no full-root mount; only the broker and cell driver mount JuiceFS.
 
-The runtime-config is `runtime-config/juicefs-volume-driver.yml`. It targets the
+The runtime-config is `deployment/runtime-configs/juicefs-volume-driver.yml`. It targets the
 live `compute` group for the isolated
 volume driver. Broker registration errands consume the shared broker link. The
 broker provisions
@@ -162,5 +175,5 @@ brokers and service access before using this POC beyond a test environment.
 Build and validate from this release root with `bosh create-release --force`,
 then interpolate the CF manifest with the ops file and the runtime-config with
 the required backend variables. After applying both to the director,
-run `register-juicefs-broker`, then verify CAPI provision/bind and app-container
+run `bosh -d juicefs run-errand register-broker --instance=juicefs-broker/0`, then verify CAPI provision/bind and app-container
 read/write/unmount behavior before relying on deprovision cleanup.

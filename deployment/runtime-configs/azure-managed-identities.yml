@@ -1,4 +1,4 @@
-# Apply to runtime-config/juicefs-volume-driver.yml; requires BPM on compute.
+# Apply to deployment/runtime-configs/juicefs-volume-driver.yml; requires BPM on compute.
 - type: replace
   path: /addons/name=juicefs-volume-driver/jobs/-
   value:

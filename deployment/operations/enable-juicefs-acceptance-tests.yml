@@ -23,5 +23,7 @@
             additional_ca_certificates: [((router_ssl.ca))]
             skip_ssl_validation: false
 - type: replace
-  path: /releases/name=juicefs/version
-  value: ((juicefs_release_version))
+  path: /releases/name=juicefs?
+  value:
+    name: juicefs
+    version: ((juicefs_release_version))

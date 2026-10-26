@@ -105,9 +105,9 @@ The JuiceFS `wasb` bucket hostname starts with the **container**, not the accoun
 domains can be configured, but the PostgreSQL proxy's token audience is currently
 hardcoded for public Azure; sovereign-cloud PostgreSQL requires upstream changes.
 
-`operations/use-azure-managed-identities.yml` adds BPM and the proxy to the
+`deployment/operations/use-azure-managed-identities.yml` adds BPM and the proxy to the
 broker group and replaces the mounter's backend settings. The matching
-`operations/azure-managed-identities-runtime-config.yml` adds a proxy to each
+`deployment/runtime-configs/azure-managed-identities.yml` adds a proxy to each
 targeted CF compute VM. **BPM must already be colocated on compute** (as in
 cf-deployment); add it in your CF manifest if absent. The proxy shares the host
 network, as required for loopback clients, DNS, and IMDS.
@@ -133,7 +133,7 @@ requires `wasb` and an HTTPS bucket. Custom CA bundles must include all roots
 needed by that process. Public trust is packaged from pinned certifi sources,
 not loaded from stemcell certificate files.
 
-For Blob only, apply `operations/use-azure-blob-managed-identity.yml` instead;
+For Blob only, apply `deployment/operations/use-azure-blob-managed-identity.yml` instead;
 no proxy or runtime-config modification is needed. For PostgreSQL only, colocate
 the proxy/BPM and consume its link while retaining your existing storage object.
 The proxy's properties live under `azure_postgres_auth_proxy`: `host`,
@@ -156,13 +156,17 @@ Set `release_version` to the explicit version reported by `create-release`, then
 
 ```sh
 bosh update-config --type=runtime --name=juicefs -n \
-  runtime-config/juicefs-volume-driver.yml \
-  -o operations/azure-managed-identities-runtime-config.yml \
+  deployment/runtime-configs/juicefs-volume-driver.yml \
+  -o deployment/runtime-configs/azure-managed-identities.yml \
   --vars-file azure-vars.yml -v juicefs_release_version="$release_version"
-bosh -n -d juicefs deploy manifests/juicefs.yml \
-  -o operations/use-azure-managed-identities.yml --vars-file azure-vars.yml
+bosh -n -d cf deploy <(bosh -d cf manifest) \
+  -o deployment/operations/cf/share-cloud-controller.yml
+bosh -n -d juicefs deploy deployment/juicefs.yml \
+  -o deployment/operations/misc/ibosh-bosh-dns-fix.yml \
+  -o deployment/operations/misc/ibosh-cf-credentials.yml \
+  -o deployment/operations/use-azure-managed-identities.yml --vars-file azure-vars.yml
 bosh deploy -n -d cf <(bosh manifest -d cf) \
-  -o operations/enable-juicefs-cf-volume-service.yml
+  -o deployment/operations/cf/enable-volume-services.yml
 ```
 
 Use these Azure-specific commands on subsequent deployments too. The default

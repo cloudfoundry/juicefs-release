@@ -1,13 +1,12 @@
-# Reuse the stemcell and DNS releases installed by ibosh cf deploy.
+# Apply after non-ha-validation.yml. Reuse the CF stemcell and alias release.
 - type: replace
   path: /stemcells/alias=default/version
   value: ((acceptance_stemcell_version))
 - type: replace
-  path: /releases/name=bosh-dns/version
-  value: ((acceptance_dns_version))
-- type: replace
-  path: /releases/name=bosh-dns-aliases/version
-  value: ((acceptance_dns_aliases_version))
+  path: /releases/name=bosh-dns-aliases
+  value:
+    name: bosh-dns-aliases
+    version: ((acceptance_dns_aliases_version))
 - type: replace
   path: /releases/name=juicefs/version
   value: ((juicefs_release_version))
