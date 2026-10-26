@@ -171,6 +171,7 @@ It also requires `juicefs_cf_password`, `juicefs_cf_system_domain`, and
 credential ops. Registration calls the public `https://api.<system_domain>`
 route without a cross-deployment Cloud Controller link. Use
 `deployment/operations/misc/provide-cf-api-ca.yml` to configure the trusted API CA.
+Supply `juicefs_cf_api_ca_certificate` from a vars file or `-v` when applying it.
 For singleton validation, apply `deployment/operations/non-ha-validation.yml`
 instead; it supplies both objects, Postgres/WebDAV jobs, credentials, certificates,
 and backend DNS aliases. Apply its CF companion

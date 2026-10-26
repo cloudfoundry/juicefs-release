@@ -3,8 +3,3 @@
   path: /instance_groups/name=juicefs-broker/properties/juicefs/cf/additional_ca_certificates
   value:
   - ((juicefs_cf_api_ca_certificate))
-- type: replace
-  path: /variables/-
-  value:
-    name: juicefs_cf_api_ca_certificate
-    type: value
