@@ -85,12 +85,16 @@ case "${1:-}" in
     bosh tasks --recent=10 --json > "$work/tasks.json" || true
     if [[ -s "$work/tasks.json" ]]; then
       jq -r '.Tables[].Rows[] | select(.state == "error") | .id' "$work/tasks.json" | while read -r task; do
-        bosh task "$task" > "$artifacts/task-$task.log" 2>&1 || true
+        bosh task "$task" --debug > "$artifacts/task-$task.log" 2>&1 || true
       done
     fi
+    # Collect the failing CF cell first, including rep, Garden, agent and system
+    # logs. Filtering for JuiceFS jobs yields empty archives before CF deploys.
+    mkdir -p "$artifacts/cf-compute" "$artifacts/cf" "$artifacts/juicefs"
+    timeout 300 bosh -d cf logs compute --all-logs --dir="$artifacts/cf-compute" || true
     for deployment in cf juicefs; do
       bosh -d "$deployment" instances --ps > "$artifacts/$deployment-instances.log" 2>&1 || true
-      bosh -d "$deployment" logs --dir="$artifacts" --only=juicefs-acceptance-tests,juicefs-volume,juicefs-volume-driver,juicefs-broker,register-broker || true
+      timeout 300 bosh -d "$deployment" logs --all-logs --dir="$artifacts/$deployment" || true
     done
     ;;
   destroy)

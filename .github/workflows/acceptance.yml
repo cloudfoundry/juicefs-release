@@ -14,7 +14,7 @@ concurrency:
 jobs:
   acceptance:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 240
     env:
       GOTOOLCHAIN: local
     steps:
@@ -80,7 +80,7 @@ jobs:
       run: bash scripts/acceptance/run test
     - name: Collect acceptance reports and diagnostics
       if: always()
-      timeout-minutes: 10
+      timeout-minutes: 20
       run: bash scripts/acceptance/run diagnostics
     - uses: actions/upload-artifact@v4
       if: always()
@@ -89,26 +89,6 @@ jobs:
         path: ${{ runner.temp }}/juicefs-acceptance/artifacts/
         if-no-files-found: warn
         retention-days: 7
-    - name: Open tmate session after failure
-      if: failure()
-      timeout-minutes: 5
-      continue-on-error: true
-      uses: mxschmitt/action-tmate@v3
-      with:
-        detached: true
-        limit-access-to-actor: true
-        tmate-server-host: ${{ vars.TMATE_SERVER_HOST }}
-        tmate-server-port: ${{ vars.TMATE_SERVER_PORT }}
-        tmate-server-rsa-fingerprint: ${{ vars.TMATE_SERVER_RSA_FINGERPRINT }}
-        tmate-server-ed25519-fingerprint: ${{ vars.TMATE_SERVER_ED25519_FINGERPRINT }}
-    - name: Keep failed environment available for one hour
-      if: failure()
-      timeout-minutes: 65
-      run: |
-        echo "Keeping the director and VMs alive for one hour. Connection details are in the tmate step."
-        echo 'After connecting, run: eval "$(ibosh docker print-env)"'
-        echo 'Then inspect: bosh -d cf ssh compute/0 -c "sudo tail -n 200 /var/vcap/sys/log/rep/rep.stderr.log"'
-        sleep 3600
     - name: Destroy instant-bosh resources
       if: always()
       timeout-minutes: 10
