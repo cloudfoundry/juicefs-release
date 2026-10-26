@@ -107,7 +107,7 @@ hardcoded for public Azure; sovereign-cloud PostgreSQL requires upstream changes
 
 `deployment/operations/use-azure-managed-identities.yml` adds BPM and the proxy to the
 broker group and replaces the mounter's backend settings. The matching
-`deployment/runtime-configs/azure-managed-identities.yml` adds a proxy to each
+`deployment/runtime-configs/operations/use-azure-managed-identities.yml` adds a proxy to each
 targeted CF compute VM. **BPM must already be colocated on compute** (as in
 cf-deployment); add it in your CF manifest if absent. The proxy shares the host
 network, as required for loopback clients, DNS, and IMDS.
@@ -157,7 +157,7 @@ Set `release_version` to the explicit version reported by `create-release`, then
 ```sh
 bosh update-config --type=runtime --name=juicefs -n \
   deployment/runtime-configs/juicefs-volume-driver.yml \
-  -o deployment/runtime-configs/azure-managed-identities.yml \
+  -o deployment/runtime-configs/operations/use-azure-managed-identities.yml \
   --vars-file azure-vars.yml -v juicefs_release_version="$release_version"
 bosh -n -d cf deploy <(bosh -d cf manifest) \
   -o deployment/operations/cf/share-cloud-controller.yml
