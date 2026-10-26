@@ -37,6 +37,14 @@ case "${1:-}" in
     ;;
   deploy-cf)
     load_env
+    # Pull explicitly so registry/download progress is visible before the
+    # light-stemcell upload, whose CPI task otherwise hides Docker pull output.
+    ibosh cf manifest > "$work/cf-stemcells.yml"
+    stemcell_os=$(bosh interpolate "$work/cf-stemcells.yml" --path /stemcells/alias=default/os)
+    stemcell_version=$(bosh interpolate "$work/cf-stemcells.yml" --path /stemcells/alias=default/version)
+    image="ghcr.io/cloudfoundry/$stemcell_os-stemcell:$stemcell_version"
+    printf 'Pulling CF stemcell image: %s\n' "$image"
+    docker pull "$image"
     ibosh cf deploy
     ;;
   build-release)
