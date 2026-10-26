@@ -1,4 +1,4 @@
-# Apply after non-ha-validation.yml. Reuse the CF stemcell and alias release.
+# Apply to JuiceFS after ../non-ha-validation.yml. Reuse the CF stemcell and alias release.
 - type: replace
   path: /stemcells/alias=default/version
   value: ((acceptance_stemcell_version))

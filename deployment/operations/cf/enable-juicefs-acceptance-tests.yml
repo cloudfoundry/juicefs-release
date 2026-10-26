@@ -1,3 +1,4 @@
+# Apply to the CF deployment to install the acceptance-test errand.
 - type: replace
   path: /instance_groups/name=juicefs-acceptance-tests?
   value:

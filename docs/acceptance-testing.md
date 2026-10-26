@@ -70,7 +70,7 @@ TLS verification uses the Cloud Controller link CA and the CF router CA.
 
 The errand can be enabled independently on the consolidated CF topology: apply
 `deployment/operations/cf/enable-volume-services.yml`,
-`deployment/operations/enable-juicefs-acceptance-tests.yml`, supplying
+`deployment/operations/cf/enable-juicefs-acceptance-tests.yml`, supplying
 `juicefs_release_version` and `juicefs_acceptance_apps_domain`, then run
 `bosh -d cf run-errand juicefs-acceptance-tests` after registering the broker.
 Its job properties allow choosing another broker name or plan.

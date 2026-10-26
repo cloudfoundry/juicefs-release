@@ -67,7 +67,7 @@ case "${1:-}" in
       -o deployment/operations/non-ha-validation.yml \
       -o deployment/operations/misc/ibosh-bosh-dns-fix.yml \
       -o deployment/operations/misc/ibosh-cf-credentials.yml \
-      -o deployment/operations/instant-bosh-acceptance.yml \
+      -o deployment/operations/misc/ibosh-acceptance.yml \
       -v juicefs_release_version="$version" \
       -v acceptance_stemcell_version="$stemcell" \
       -v acceptance_dns_aliases_version="$aliases"
@@ -76,7 +76,7 @@ case "${1:-}" in
     bosh -d cf deploy "$work/cf.yml" \
       -o deployment/operations/cf/non-ha-validation.yml \
       -o deployment/operations/cf/enable-volume-services.yml \
-      -o deployment/operations/enable-juicefs-acceptance-tests.yml \
+      -o deployment/operations/cf/enable-juicefs-acceptance-tests.yml \
       -v juicefs_release_version="$version" \
       -v juicefs_acceptance_apps_domain="$domain"
     bosh -d juicefs run-errand register-broker --instance=juicefs-broker/0 --download-logs --logs-dir="$artifacts"
