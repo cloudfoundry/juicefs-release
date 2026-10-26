@@ -155,16 +155,16 @@ bosh upload-release
 Set `release_version` to the explicit version reported by `create-release`, then:
 
 ```sh
-bosh update-config --type=runtime --name=juicefs -n \
-  deployment/runtime-configs/juicefs-volume-driver.yml \
-  -o deployment/runtime-configs/operations/use-azure-managed-identities.yml \
-  --vars-file azure-vars.yml -v juicefs_release_version="$release_version"
 system_domain=$(bosh -d cf manifest | bosh interpolate - --path /instance_groups/name=control/jobs/name=cloud_controller_ng/properties/system_domain)
 bosh -n -d juicefs deploy deployment/juicefs.yml \
   -o deployment/operations/misc/ibosh-bosh-dns-fix.yml \
   -o deployment/operations/misc/ibosh-cf-credentials.yml \
   -o deployment/operations/use-azure-managed-identities.yml \
   -v juicefs_cf_system_domain="$system_domain" --vars-file azure-vars.yml
+bosh update-config --type=runtime --name=juicefs -n \
+  deployment/runtime-configs/juicefs-volume-driver.yml \
+  -o deployment/runtime-configs/operations/use-azure-managed-identities.yml \
+  --vars-file azure-vars.yml -v juicefs_release_version="$release_version"
 bosh deploy -n -d cf <(bosh manifest -d cf) \
   -o deployment/operations/cf/enable-volume-services.yml
 ```
