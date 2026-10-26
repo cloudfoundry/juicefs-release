@@ -378,8 +378,8 @@ under `/var/vcap/sys/log/juicefs-volume/`; broker logs are under
 PostgreSQL metadata and WebDAV blocks share the backend persistent disk (50 GiB
 in the example manifest). Monitor its free space: a full object store can also
 prevent PostgreSQL checkpoints, causing metadata EIO errors across all mounts.
-`deployment/operations/expand-backend-disk.yml` expands the example backend disk to 50 GiB
-when applied to the deployed manifest; increase that value for larger workloads.
+`deployment/operations/non-ha-validation.yml` sets the backend persistent disk
+to 50 GiB; increase its `persistent_disk` value for larger workloads.
 Preserve the disk and recover the database before reconnecting affected clients.
 If an app retains a disconnected FUSE mount, stop it and wait for its volume
 unmount to finish before starting it again; an immediate restart can race the

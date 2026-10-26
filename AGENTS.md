@@ -61,7 +61,8 @@ are applied. `deployment/juicefs.yml` contains the `juicefs-broker` group and ac
 `juicefs_metadata` and `juicefs_storage` objects for external backends.
 `deployment/operations/non-ha-validation.yml` adds singleton Postgres/WebDAV,
 their variables and DNS aliases, and overrides those backend objects. Apply it
-before `instant-bosh-acceptance.yml` or disk-expansion ops. The CF aliases are in
+before `instant-bosh-acceptance.yml`. Its backend persistent disk is 50 GiB.
+The CF aliases are in
 `deployment/operations/cf/non-ha-validation.yml`. Instant-bosh embeds DNS only
 in CF; `deployment/operations/misc/ibosh-bosh-dns-fix.yml` adds it to JuiceFS,
 reusing global `/dns_*` certificates without declaring variables. Other directors
