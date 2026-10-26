@@ -94,6 +94,21 @@ BOSH task output, and JuiceFS job diagnostics. The acceptance VM is kept alive
 until destruction so its JUnit report can be retrieved. Cancellation or a runner
 loss can interrupt cleanup; ephemeral runners reclaim remaining resources.
 
+After a failure, the workflow opens a detached `mxschmitt/action-tmate` session
+and waits one hour before destroying the environment. Connection instructions
+appear in the tmate step's log. Access is limited to the triggering actor's
+GitHub SSH keys. The wait still runs if tmate setup fails.
+
+The action currently documents that its default public relay is unavailable.
+For a working relay, configure repository Actions variables `TMATE_SERVER_HOST`,
+`TMATE_SERVER_PORT`, `TMATE_SERVER_RSA_FINGERPRINT`, and
+`TMATE_SERVER_ED25519_FINGERPRINT` with your tmate server's settings.
+
+In the debug shell, run `eval "$(ibosh docker print-env)"` to target the director,
+then use `bosh -d cf instances --ps`, `bosh -d cf task 34 --debug` (substitute the
+failed task ID), and `bosh -d cf ssh compute/0` to inspect rep and Garden logs.
+Do not print the loaded environment: it contains director credentials.
+
 `scripts/test-go` includes the app checks and a local TLS CAPI/UAA/router fixture
 that executes the real suite. The fixture verifies broker scoping, executable
 app upload, restart, and cleanup on both success and deliberate post-restart
