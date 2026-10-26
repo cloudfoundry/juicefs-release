@@ -14,8 +14,6 @@ consumes:
   - juicefs.broker.port
   - juicefs.broker.username
   - juicefs.broker.password
-- name: cloud_controller_https_endpoint
-  type: cloud_controller_https_endpoint
 properties:
   juicefs.broker.name:
     description: Service broker registration name.
@@ -26,6 +24,8 @@ properties:
   juicefs.cf.password:
     description: Cloud Controller administrator password.
     default: ""
+  juicefs.cf.system_domain:
+    description: Cloud Foundry system domain used to construct the public API URL.
   juicefs.cf.skip_ssl_validation:
     description: Skip Cloud Controller TLS validation.
     default: false

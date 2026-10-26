@@ -144,14 +144,12 @@ devbox run deploy
 This command:
 
 1. Sources `bosh.env` and creates and uploads a development release.
-2. Shares CF's HTTPS endpoint link using
-   `deployment/operations/cf/share-cloud-controller.yml`.
-3. Deploys `deployment/juicefs.yml` with
+2. Reads CF's system domain and deploys `deployment/juicefs.yml` with
    `deployment/operations/non-ha-validation.yml` and the instant-bosh DNS
    workaround `deployment/operations/misc/ibosh-bosh-dns-fix.yml`. The
    `misc/ibosh-cf-credentials.yml` ops reuses CF credentials in instant-bosh's
    config server.
-4. Updates the named `juicefs` runtime-config with the built release's explicit
+3. Updates the named `juicefs` runtime-config with the built release's explicit
    version and redeploys CF, applying
    `deployment/operations/cf/non-ha-validation.yml`,
    `deployment/operations/cf/enable-volume-services.yml`.
@@ -168,9 +166,11 @@ cf marketplace -e juicefs
 
 The base `deployment/juicefs.yml` requires `juicefs_metadata` and
 `juicefs_storage` objects in a vars file, or an external-backend ops file.
-It also requires `juicefs_cf_password` and `juicefs_cf_ca_certificates` for
-registration, unless using the instant-bosh credential ops. CF must publish its
-shared HTTPS endpoint link before the JuiceFS deployment.
+It also requires `juicefs_cf_password`, `juicefs_cf_system_domain`, and
+`juicefs_cf_ca_certificates` for registration, unless using the instant-bosh
+credential ops. Registration calls the public `https://api.<system_domain>`
+route without a cross-deployment Cloud Controller link. Use
+`deployment/operations/misc/provide-cf-api-ca.yml` to configure the trusted API CA.
 For singleton validation, apply `deployment/operations/non-ha-validation.yml`
 instead; it supplies both objects, Postgres/WebDAV jobs, credentials, certificates,
 and backend DNS aliases. Apply its CF companion

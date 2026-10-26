@@ -141,10 +141,13 @@ plan. The broker's instance metadata lives on JuiceFS, not on its ephemeral disk
 `deployment/operations/cf/enable-volume-services.yml` enables CAPI volume services.
 The main JuiceFS manifest colocates `register-broker` and `deregister-broker`
 as errands on `juicefs-broker`. They consume the local broker link and CF's shared
-HTTPS endpoint; apply `deployment/operations/cf/share-cloud-controller.yml`
-before deploying JuiceFS. `misc/ibosh-cf-credentials.yml` references existing CF
-credentials in instant-bosh; other environments supply `juicefs_cf_password` and
-`juicefs_cf_ca_certificates`. The CF deployment is separate
+API system domain, constructing `https://api.<system_domain>` without a
+cross-deployment endpoint link. `misc/ibosh-cf-credentials.yml` references the
+existing CF domain and credentials in instant-bosh; other environments supply
+`juicefs_cf_password`, `juicefs_cf_system_domain`, and
+`juicefs_cf_ca_certificates`. `misc/provide-cf-api-ca.yml` configures the trusted
+API CA; TLS verification can be skipped for disposable tests with
+`misc/skip-cf-api-tls-validation.yml`. The CF deployment is separate
 from the JuiceFS deployment. The JuiceFS deployment marks Postgres, WebDAV, the
 full-root mountpoint, and broker as shared link providers. The CF runtime-config
 consumes the broker mounter's shared `juicefs_mount` link from deployment

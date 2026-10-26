@@ -77,9 +77,12 @@ Its job properties allow choosing another broker name or plan.
 
 Registration runs in JuiceFS with
 `bosh -d juicefs run-errand register-broker --instance=juicefs-broker/0`.
-Before deploying JuiceFS, share CF's endpoint with
-`deployment/operations/cf/share-cloud-controller.yml`; the main manifest consumes
-that shared link and colocates both registration errands on the broker VM.
+Registration calls `https://api.<system_domain>`, the public CF API route, and
+does not consume a cross-deployment endpoint link. The main manifest colocates
+both registration errands on the broker VM. CI sets the system domain from the
+CF manifest and skips API TLS verification only for this disposable test
+environment; other deployments can use
+`deployment/operations/misc/provide-cf-api-ca.yml` to configure the public API CA.
 
 ## Local execution
 

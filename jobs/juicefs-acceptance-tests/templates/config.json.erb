@@ -1,11 +1,10 @@
 <%
   require 'json'
-  cc = link('cloud_controller_https_endpoint')
   config = {
-    apiURL: "https://#{cc.p('cc.internal_service_hostname')}:#{cc.p('cc.public_tls.port')}",
+    apiURL: "https://api.#{p('juicefs.cf.system_domain')}",
     username: p('juicefs.cf.username'),
     password: p('juicefs.cf.password'),
-    caCert: ([cc.p('cc.public_tls.ca_cert')] + p('juicefs.cf.additional_ca_certificates')).join("\n"),
+    caCert: p('juicefs.cf.additional_ca_certificates').join("\n"),
     appsDomain: p('juicefs.acceptance.apps_domain'),
     brokerName: p('juicefs.acceptance.broker_name'),
     planName: p('juicefs.acceptance.plan_name'),

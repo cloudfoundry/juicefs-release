@@ -68,17 +68,16 @@ instance_groups:
     lifecycle: errand
     consumes:
       juicefs_broker: {from: juicefs_broker, ip_addresses: true}
-      cloud_controller_https_endpoint: {from: cloud_controller_https_endpoint, deployment: cf}
   - name: deregister-broker
     release: juicefs
     lifecycle: errand
     consumes:
       juicefs_broker: {from: juicefs_broker, ip_addresses: true}
-      cloud_controller_https_endpoint: {from: cloud_controller_https_endpoint, deployment: cf}
   properties:
     juicefs:
       cf:
         username: admin
+        system_domain: ((juicefs_cf_system_domain))
         password: ((juicefs_cf_password))
         additional_ca_certificates: ((juicefs_cf_ca_certificates))
         skip_ssl_validation: false

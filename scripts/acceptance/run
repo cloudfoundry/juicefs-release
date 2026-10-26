@@ -60,14 +60,13 @@ case "${1:-}" in
     domain=$(bosh interpolate "$work/cf.yml" --path /instance_groups/name=control/jobs/name=cloud_controller_ng/properties/system_domain)
     stemcell=$(bosh interpolate "$work/cf.yml" --path /stemcells/alias=default/version)
     aliases=$(bosh interpolate "$work/cf.yml" --path /releases/name=bosh-dns-aliases/version)
-    # Publish CF's endpoint before JuiceFS resolves its cross-deployment link.
-    bosh -d cf deploy "$work/cf.yml" -o deployment/operations/cf/share-cloud-controller.yml
-    bosh -d cf manifest > "$work/cf.yml"
     bosh -d juicefs deploy deployment/juicefs.yml \
       -o deployment/operations/non-ha-validation.yml \
       -o deployment/operations/misc/ibosh-bosh-dns-fix.yml \
       -o deployment/operations/misc/ibosh-cf-credentials.yml \
       -o deployment/operations/misc/ibosh-acceptance.yml \
+      -o deployment/operations/misc/skip-cf-api-tls-validation.yml \
+      -v juicefs_cf_system_domain="$domain" \
       -v juicefs_release_version="$version" \
       -v acceptance_stemcell_version="$stemcell" \
       -v acceptance_dns_aliases_version="$aliases"

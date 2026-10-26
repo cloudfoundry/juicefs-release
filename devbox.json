@@ -7,7 +7,7 @@
     ],
     "scripts": {
       "deploy": [
-        "bash -euo pipefail -c 'set -a; source ./bosh.env; set +a; bosh create-release --force && bosh upload-release && release_manifest=$(ls -v dev_releases/juicefs/juicefs-*.yml | tail -n 1) && bosh deploy -n -d cf <(bosh manifest -d cf) -o deployment/operations/cf/share-cloud-controller.yml && bosh -n -d juicefs deploy deployment/juicefs.yml -o deployment/operations/non-ha-validation.yml -o deployment/operations/misc/ibosh-bosh-dns-fix.yml -o deployment/operations/misc/ibosh-cf-credentials.yml && bosh update-config --type=runtime --name=juicefs -n deployment/runtime-configs/juicefs-volume-driver.yml -v juicefs_release_version=\"$(bosh interpolate \"$release_manifest\" --path /version)\" && bosh deploy -n -d cf <(bosh manifest -d cf) -o deployment/operations/cf/non-ha-validation.yml -o deployment/operations/cf/enable-volume-services.yml'"
+        "bash scripts/deploy"
       ]
     }
   }

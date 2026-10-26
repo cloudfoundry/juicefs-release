@@ -12,8 +12,6 @@
     jobs:
     - name: juicefs-acceptance-tests
       release: juicefs
-      consumes:
-        cloud_controller_https_endpoint: {from: cloud_controller_https_endpoint}
       properties:
         juicefs:
           acceptance:
@@ -21,6 +19,7 @@
           cf:
             username: admin
             password: ((cf_admin_password))
+            system_domain: ((juicefs_acceptance_apps_domain))
             additional_ca_certificates: [((router_ssl.ca))]
             skip_ssl_validation: false
 - type: replace
