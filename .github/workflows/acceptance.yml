@@ -1,0 +1,95 @@
+name: CF volume acceptance
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cf-volume-acceptance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      GOTOOLCHAIN: local
+    steps:
+    - name: Add 8 GiB swap
+      run: |
+        sudo install -m 600 /dev/null /swapfile-juicefs
+        sudo fallocate -l 8G /swapfile-juicefs
+        sudo mkswap /swapfile-juicefs
+        sudo swapon /swapfile-juicefs
+        swapon --show
+        free -h
+        df -h /
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        persist-credentials: false
+    - uses: actions/setup-go@v5
+      with:
+        go-version: '1.25.x'
+        cache-dependency-path: |
+          src/juicefs/go.sum
+          src/juicefs-acceptance-tests/go.sum
+    - name: Load pinned tool versions
+      run: |
+        source scripts/acceptance/versions.env
+        echo "INSTANT_BOSH_REVISION=$INSTANT_BOSH_REVISION" >> "$GITHUB_ENV"
+        echo "BOSH_CLI_VERSION=$BOSH_CLI_VERSION" >> "$GITHUB_ENV"
+        echo "ACCEPTANCE_WORK_DIR=$RUNNER_TEMP/juicefs-acceptance" >> "$GITHUB_ENV"
+    - uses: actions/checkout@v4
+      with:
+        repository: rkoster/instant-bosh
+        ref: ${{ env.INSTANT_BOSH_REVISION }}
+        path: .acceptance-tools/instant-bosh
+        persist-credentials: false
+    - name: Install BOSH and instant-bosh
+      timeout-minutes: 15
+      run: |
+        go install github.com/cloudfoundry/bosh-cli/v7@"$BOSH_CLI_VERSION"
+        mv "$(go env GOPATH)/bin/bosh-cli" "$(go env GOPATH)/bin/bosh"
+        go build -C .acceptance-tools/instant-bosh -o "$(go env GOPATH)/bin/ibosh" ./cmd/ibosh
+        bosh --version
+        ibosh cf deploy --help
+    - name: Run local acceptance component checks
+      working-directory: src/juicefs-acceptance-tests
+      run: go test -mod=vendor -race ./... -ginkgo.randomize-all
+    - name: Start instant-bosh Docker director
+      timeout-minutes: 20
+      run: |
+        sudo apt-get update
+        sudo apt-get install --no-install-recommends -y acl
+        bash scripts/acceptance/run start
+    - name: Deploy Cloud Foundry
+      timeout-minutes: 60
+      run: bash scripts/acceptance/run deploy-cf
+    - name: Build JuiceFS release
+      timeout-minutes: 20
+      run: bash scripts/acceptance/run build-release
+    - name: Deploy JuiceFS, update CF cells, and register broker
+      timeout-minutes: 45
+      run: bash scripts/acceptance/run deploy-service
+    - name: Run persistence acceptance errand
+      timeout-minutes: 60
+      run: bash scripts/acceptance/run test
+    - name: Collect acceptance reports and diagnostics
+      if: always()
+      timeout-minutes: 20
+      run: bash scripts/acceptance/run diagnostics
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: juicefs-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/juicefs-acceptance/artifacts/
+        if-no-files-found: warn
+        retention-days: 7
+    - name: Destroy instant-bosh resources
+      if: always()
+      timeout-minutes: 10
+      run: bash scripts/acceptance/run destroy

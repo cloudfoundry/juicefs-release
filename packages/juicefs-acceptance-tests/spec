@@ -1,0 +1,6 @@
+---
+name: juicefs-acceptance-tests
+dependencies:
+- golang-1.25-linux
+files:
+- juicefs-acceptance-tests/**/*
