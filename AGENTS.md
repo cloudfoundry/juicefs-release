@@ -1,5 +1,9 @@
 # Development loop
 
+When changing documented commands, paths, or development constraints, update this
+file in the same change. Verify claims against code; link to detailed documentation
+rather than duplicating it.
+
 This is the `juicefs` BOSH release. `src/juicefs` is a pinned upstream Git submodule;
 `packages/juicefs` builds it with the vendored `golang-1.25-linux` BOSH package.
 `nginx_webdav` is vendored from CAPI release and powers our own singleton
@@ -21,8 +25,8 @@ run `scripts/generate-fakes` to regenerate fakes using the pinned vendored tool.
 errand. Local checks include a TLS CF API fixture; the live suite requires
 `JUICEFS_ACCEPTANCE_CONFIG`. CI orchestration lives in `scripts/acceptance/run`;
 see `docs/acceptance-testing.md`. The workflow currently uses the standard
-GitHub-hosted `ubuntu-latest` runner. Keep instant-bosh CLI/image pins together in
-`scripts/acceptance/versions.env`. Run the orchestration only on disposable hosts.
+GitHub-hosted `ubuntu-latest` runner. Keep instant-bosh CLI/image pins together
+in `scripts/acceptance/versions.env`. Run the orchestration only on disposable hosts.
 Do not check generated vendor trees for upstream submodules into Git.
 `packages/juicefs` contains only the upstream client. Release-owned tools have
 separate packages and Go modules under matching `src/` directories; these compile
@@ -47,32 +51,18 @@ after adding blobs. The repository home is
 director credentials. Do not commit it or print its contents. Refresh it from
 the instant-bosh repo when the director credentials change.
 
-From the release root:
+From the release root, run `devbox run deploy` for the instant-bosh validation
+environment. `scripts/deploy` defines its deployment sequence. See
+`README.md#deploy-and-register` and `docs/acceptance-testing.md` for details.
 
-```sh
-devbox run deploy
-```
-
-This sources `bosh.env`, runs `bosh create-release --force`, uploads that release,
-updates the named `juicefs` runtime-config with `bosh update-config` using the
-newly built release's explicit version, deploys the JuiceFS release, then runs
-`bosh deploy -n -d cf <(bosh manifest -d cf)` so pending runtime-config changes
-are applied. `deployment/juicefs.yml` contains the `juicefs-broker` group and accepts
-`juicefs_metadata` and `juicefs_storage` objects for external backends.
-`deployment/operations/non-ha-validation.yml` adds singleton Postgres/WebDAV,
-their variables and DNS aliases, and overrides those backend objects. Apply it
-before `misc/ibosh-acceptance.yml`. Its backend persistent disk is 50 GiB.
-The CF aliases are in
-`deployment/operations/cf/non-ha-validation.yml`. Instant-bosh embeds DNS only
-in CF; `deployment/operations/misc/ibosh-bosh-dns-fix.yml` adds it to JuiceFS,
-reusing global `/dns_*` certificates without declaring variables. Other directors
-should use the upstream DNS runtime-config. See `deployment/runtime-configs/README.md`.
-The manifest uses `version: latest` for the
-`juicefs` release. The director must have an
-`ubuntu-noble` stemcell and cloud-config with `z1`, `default` network and
-`default` VM type. Postgres and BPM are pinned external releases; BPM is used by
-the blobstore job. The JuiceFS FUSE client runs directly on the VM under Monit,
-not in BPM, so it can access the host `/dev/fuse` and publish its mount normally.
+The base `deployment/juicefs.yml` accepts `juicefs_metadata` and
+`juicefs_storage` objects. `deployment/operations/non-ha-validation.yml` adds
+singleton Postgres/WebDAV, their DNS aliases, and the 50 GiB backend disk.
+Instant-bosh DNS and credential adjustments live in
+`deployment/operations/misc/`; other directors should use their normal DNS and
+credential configuration. The director needs an `ubuntu-noble` stemcell and
+cloud-config with `z1`, the `default` network, and `default` VM type. The JuiceFS
+FUSE client runs directly on the VM under Monit so it can access host `/dev/fuse`.
 The singleton
 WebDAV blobstore keeps objects on its persistent disk at
 `/var/vcap/store/juicefs-blobstore/`. The job provides a `webdav` BOSH link;
@@ -138,46 +128,15 @@ records make failed quota application retryable; completed provision retries do
 not change quotas. Existing pre-quota directories retain the unlimited shared
 plan. The broker's instance metadata lives on JuiceFS, not on its ephemeral disk.
 
-`deployment/operations/cf/enable-volume-services.yml` enables CAPI volume services.
-The main JuiceFS manifest colocates `register-broker` and `deregister-broker`
-as errands on `juicefs-broker`. They consume the local broker link and CF's shared
-API system domain, constructing `https://api.<system_domain>` without a
-cross-deployment endpoint link. `misc/ibosh-cf-credentials.yml` references the
-existing CF domain and credentials in instant-bosh; other environments supply
-`juicefs_cf_password`, `juicefs_cf_system_domain`, and
-`juicefs_cf_ca_certificates`. `misc/provide-cf-api-ca.yml` configures the trusted
-API CA; TLS verification can be skipped for disposable tests with
-`misc/skip-cf-api-tls-validation.yml`. The CF deployment is separate
-from the JuiceFS deployment. The JuiceFS deployment marks Postgres, WebDAV, the
-full-root mountpoint, and broker as shared link providers. The CF runtime-config
-consumes the broker mounter's shared `juicefs_mount` link from deployment
-`juicefs`. That mounter is authoritative for `juicefs.metadata` (postgres or
-mysql), `juicefs.storage` (webdav, s3 or wasb/Azure Blob), and the filesystem name. The Diego
-driver is link-only, with no independent backend overrides. Quota
-commands reuse the mounter's rendered configuration. The colocated broker
-consumes its mountpoint link. `deployment/operations/use-mysql-s3.yml` shows external
-backend configuration; `deployment/operations/use-azure-blob.yml` configures Azure Blob.
-Changing properties does not migrate existing data. The CF control group has
-no full-root mount; only the broker and cell driver mount JuiceFS.
+See `README.md#cloud-foundry-volume-service-poc` and
+`docs/acceptance-testing.md` for the volume-service deployment and validation
+details. `scripts/deploy` is the source of truth for the instant-bosh deployment
+sequence. The CF runtime-config consumes the broker mounter's shared
+`juicefs_mount` link; the mounter defines the backend configuration and
+filesystem name. The driver mounts only the service-instance subdirectory.
 
-The runtime-config is `deployment/runtime-configs/juicefs-volume-driver.yml`. It targets the
-live `compute` group for the isolated
-volume driver. Broker registration errands consume the shared broker link. The
-broker provisions
-directories beneath `/cf-volumes/<service-instance-guid>`; each cell mount uses
-JuiceFS `--subdir` for only that directory. Bindings are synchronous and stateless,
-with `bindings_retrievable: false`; binding retrieval is not implemented.
-The optional binding parameter `mount` selects a clean absolute container path
-(for example, `cf bind-service cf-env foobar -c '{"mount":"/data"}'`). Without it,
-the path is `/var/vcap/data/<service-instance-guid>`. Cloud Controller stores the
-returned mount instructions. This view restriction is not strong
-isolation against hostile users who can access shared backend credentials.
-The broker-registration errands currently use the configured CF admin
-credential; replace that with a dedicated account authorized to manage service
-brokers and service access before using this POC beyond a test environment.
-
-Build and validate from this release root with `bosh create-release --force`,
-then interpolate the CF manifest with the ops file and the runtime-config with
-the required backend variables. After applying both to the director,
-run `bosh -d juicefs run-errand register-broker --instance=juicefs-broker/0`, then verify CAPI provision/bind and app-container
-read/write/unmount behavior before relying on deprovision cleanup.
+Service bindings are synchronous and stateless; binding retrieval is not
+implemented. The optional `mount` binding parameter selects an absolute container
+path, defaulting to `/var/vcap/data/<service-instance-guid>`. The broker currently
+uses the configured CF administrator credential; replace it with a dedicated
+broker-management account before using this POC beyond a test environment.
