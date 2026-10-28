@@ -148,7 +148,7 @@ This command:
    `deployment/operations/non-ha-validation.yml` and the instant-bosh DNS
    workaround `deployment/operations/misc/ibosh-bosh-dns-fix.yml`. The
    `misc/ibosh-cf-credentials.yml` ops reuses CF credentials in instant-bosh's
-   config server.
+   config server; `scripts/deploy` supplies the system domain from CF's manifest.
 3. Updates the named `juicefs` runtime-config with the built release's explicit
    version and redeploys CF, applying
    `deployment/operations/cf/non-ha-validation.yml`,

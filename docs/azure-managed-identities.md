@@ -204,8 +204,9 @@ bosh -n -d juicefs deploy deployment/juicefs.yml \
   --vars-file azure-vars.yml
 ```
 
-The `ibosh-cf-credentials.yml` ops supplies the system domain, admin password,
-and router CA from instant-bosh's config server, with TLS verification enabled.
+The `ibosh-cf-credentials.yml` ops supplies the admin password and router CA from
+instant-bosh's config server. Set `juicefs_cf_system_domain` from the generated
+CF manifest; TLS verification remains enabled.
 The skip-validation ops file is only for disposable tests. If using instant-bosh
 for a production deployment, validate the credential lifecycle, CA trust, and
 DNS behavior in that environment before relying on it.
