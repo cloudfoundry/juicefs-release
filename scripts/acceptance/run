@@ -59,22 +59,26 @@ case "${1:-}" in
     bosh -d cf manifest > "$work/cf.yml"
     domain=$(bosh interpolate "$work/cf.yml" --path /instance_groups/name=control/jobs/name=cloud_controller_ng/properties/system_domain)
     stemcell=$(bosh interpolate "$work/cf.yml" --path /stemcells/alias=default/version)
-    dns=$(bosh interpolate "$work/cf.yml" --path /releases/name=bosh-dns/version)
     aliases=$(bosh interpolate "$work/cf.yml" --path /releases/name=bosh-dns-aliases/version)
-    bosh -d juicefs deploy manifests/juicefs.yml \
-      -o operations/instant-bosh-acceptance.yml \
+    bosh -d juicefs deploy deployment/juicefs.yml \
+      -o deployment/operations/non-ha-validation.yml \
+      -o deployment/operations/misc/ibosh-bosh-dns-fix.yml \
+      -o deployment/operations/misc/ibosh-cf-credentials.yml \
+      -o deployment/operations/misc/ibosh-acceptance.yml \
+      -o deployment/operations/misc/skip-cf-api-tls-validation.yml \
+      -v juicefs_cf_system_domain="$domain" \
       -v juicefs_release_version="$version" \
       -v acceptance_stemcell_version="$stemcell" \
-      -v acceptance_dns_version="$dns" \
       -v acceptance_dns_aliases_version="$aliases"
-    bosh update-config --type=runtime --name=juicefs runtime-config/juicefs-volume-driver.yml \
+    bosh update-config --type=runtime --name=juicefs deployment/runtime-configs/juicefs-volume-driver.yml \
       -v juicefs_release_version="$version"
     bosh -d cf deploy "$work/cf.yml" \
-      -o operations/enable-juicefs-cf-volume-service.yml \
-      -o operations/enable-juicefs-acceptance-tests.yml \
+      -o deployment/operations/cf/non-ha-validation.yml \
+      -o deployment/operations/cf/enable-volume-services.yml \
+      -o deployment/operations/cf/enable-juicefs-acceptance-tests.yml \
       -v juicefs_release_version="$version" \
       -v juicefs_acceptance_apps_domain="$domain"
-    bosh -d cf run-errand register-juicefs-broker --download-logs --logs-dir="$artifacts"
+    bosh -d juicefs run-errand register-broker --instance=juicefs-broker/0 --download-logs --logs-dir="$artifacts"
     ;;
   test)
     load_env

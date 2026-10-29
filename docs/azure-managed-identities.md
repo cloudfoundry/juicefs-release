@@ -105,9 +105,9 @@ The JuiceFS `wasb` bucket hostname starts with the **container**, not the accoun
 domains can be configured, but the PostgreSQL proxy's token audience is currently
 hardcoded for public Azure; sovereign-cloud PostgreSQL requires upstream changes.
 
-`operations/use-azure-managed-identities.yml` adds BPM and the proxy to the
+`deployment/operations/use-azure-managed-identities.yml` adds BPM and the proxy to the
 broker group and replaces the mounter's backend settings. The matching
-`operations/azure-managed-identities-runtime-config.yml` adds a proxy to each
+`deployment/runtime-configs/operations/use-azure-managed-identities.yml` adds a proxy to each
 targeted CF compute VM. **BPM must already be colocated on compute** (as in
 cf-deployment); add it in your CF manifest if absent. The proxy shares the host
 network, as required for loopback clients, DNS, and IMDS.
@@ -133,7 +133,7 @@ requires `wasb` and an HTTPS bucket. Custom CA bundles must include all roots
 needed by that process. Public trust is packaged from pinned certifi sources,
 not loaded from stemcell certificate files.
 
-For Blob only, apply `operations/use-azure-blob-managed-identity.yml` instead;
+For Blob only, apply `deployment/operations/use-azure-blob-managed-identity.yml` instead;
 no proxy or runtime-config modification is needed. For PostgreSQL only, colocate
 the proxy/BPM and consume its link while retaining your existing storage object.
 The proxy's properties live under `azure_postgres_auth_proxy`: `host`,
@@ -152,17 +152,35 @@ devbox run -- bosh create-release --force
 bosh upload-release
 ```
 
-Set `release_version` to the explicit version reported by `create-release`, then:
+Set `release_version` to the explicit version reported by `create-release` and
+`system_domain` to the CF manifest's `system_domain`. Ensure the CF `api.<system_domain>`
+route is reachable from the JuiceFS VM, and configure JuiceFS with the CF admin
+password and a CA bundle trusted for that public API route. Install BOSH DNS
+using your director's standard runtime-config before deploying JuiceFS.
+
+```sh
+system_domain=$(bosh -d cf manifest | bosh interpolate - --path /instance_groups/name=control/jobs/name=cloud_controller_ng/properties/system_domain)
+bosh -n -d cf deploy <(bosh -d cf manifest) \
+  -o deployment/operations/cf/enable-volume-services.yml
+bosh -n -d juicefs deploy deployment/juicefs.yml \
+  -o deployment/operations/use-azure-managed-identities.yml \
+  -o deployment/operations/misc/provide-cf-api-ca.yml \
+  -v juicefs_cf_system_domain="$system_domain" \
+  -v juicefs_cf_password="$cf_admin_password" \
+  -v juicefs_cf_api_ca_certificate="$cf_api_ca_certificate" \
+  --vars-file azure-vars.yml
+bosh -d juicefs run-errand register-broker --instance=juicefs-broker/0
+```
+
+After JuiceFS exists, update the runtime-config that deploys the driver to CF
+cells. Doing this afterward ensures its `juicefs_mount` link is available:
 
 ```sh
 bosh update-config --type=runtime --name=juicefs -n \
-  runtime-config/juicefs-volume-driver.yml \
-  -o operations/azure-managed-identities-runtime-config.yml \
+  deployment/runtime-configs/juicefs-volume-driver.yml \
+  -o deployment/runtime-configs/operations/use-azure-managed-identities.yml \
   --vars-file azure-vars.yml -v juicefs_release_version="$release_version"
-bosh -n -d juicefs deploy manifests/juicefs.yml \
-  -o operations/use-azure-managed-identities.yml --vars-file azure-vars.yml
-bosh deploy -n -d cf <(bosh manifest -d cf) \
-  -o operations/enable-juicefs-cf-volume-service.yml
+bosh deploy -n -d cf <(bosh -d cf manifest)
 ```
 
 Use these Azure-specific commands on subsequent deployments too. The default
@@ -170,6 +188,28 @@ Use these Azure-specific commands on subsequent deployments too. The default
 not the Azure deployment entry point. The bundled PostgreSQL/WebDAV backend
 group is retained by the example operations; remove unused jobs/resources in
 your deployment-specific manifest after validating the external backends.
+
+### When using instant-bosh
+
+The instant-bosh CLI keeps generated CF credentials in its config server and
+embeds DNS in CF. Use the following JuiceFS ops to source CF credentials and
+reuse the global `/dns_*` certificates already defined by the CF deployment,
+instead of supplying the standard-director variables and DNS configuration above:
+
+```sh
+bosh -n -d juicefs deploy deployment/juicefs.yml \
+  -o deployment/operations/misc/ibosh-bosh-dns-fix.yml \
+  -o deployment/operations/misc/ibosh-cf-credentials.yml \
+  -o deployment/operations/use-azure-managed-identities.yml \
+  --vars-file azure-vars.yml
+```
+
+The `ibosh-cf-credentials.yml` ops supplies the admin password and router CA from
+instant-bosh's config server. Set `juicefs_cf_system_domain` from the generated
+CF manifest; TLS verification remains enabled.
+The skip-validation ops file is only for disposable tests. If using instant-bosh
+for a production deployment, validate the credential lifecycle, CA trust, and
+DNS behavior in that environment before relying on it.
 
 Bootstrap initialization now runs in the supervised mount launcher, rather than
 `pre-start`, so Monit can start the colocated proxy concurrently. It retries

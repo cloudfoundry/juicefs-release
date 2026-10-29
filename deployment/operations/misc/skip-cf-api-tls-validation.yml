@@ -1,0 +1,4 @@
+# For disposable test environments only. Prefer a trusted CA bundle.
+- type: replace
+  path: /instance_groups/name=juicefs-broker/properties/juicefs/cf/skip_ssl_validation
+  value: true

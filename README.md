@@ -11,7 +11,9 @@
 A proof-of-concept [JuiceFS](https://juicefs.com/) volume service for Cloud Foundry.
 The release includes a service broker, a Diego volume driver, and a shared
 filesystem with PostgreSQL or MySQL metadata and WebDAV, S3, or Azure Blob object storage.
-The supplied deployment uses PostgreSQL and persistent WebDAV storage.
+The base deployment accepts external metadata and object-storage configuration.
+The `deployment/operations/non-ha-validation.yml` ops file adds singleton
+PostgreSQL and persistent WebDAV backends for validation.
 
 Applications can provision a directory, bind it at a chosen container path, and
 keep files across container restarts. BOSH-configurable service plans apply
@@ -39,7 +41,7 @@ Diego cell → JuiceFS volume driver → subdirectory FUSE mount → app contain
                       └─ WebDAV / S3 / Azure Blob: persistent data blocks
 ```
 
-The `juicefs` deployment has two singleton instance groups:
+With the non-HA validation ops file, `juicefs` has two singleton instance groups:
 
 | Group | Jobs | Storage |
 | --- | --- | --- |
@@ -56,7 +58,7 @@ The CF runtime-config adds the volume driver to `compute`. It consumes the
 broker VM's shared `juicefs_mount` BOSH link for
 the filesystem name and all backend settings, credentials, and trust roots.
 The broker's volume mounter is the authoritative configuration source;
-registration errands run in CF.
+registration errands are colocated on `juicefs-broker` in the JuiceFS deployment.
 
 FUSE clients run directly under Monit so they can use the host `/dev/fuse` and
 mount namespace. In the default WebDAV setup, clients connect directly to
@@ -142,21 +144,41 @@ devbox run deploy
 This command:
 
 1. Sources `bosh.env` and creates and uploads a development release.
-2. Updates the named `juicefs` runtime-config with the built release's explicit
-   version.
-3. Deploys `manifests/juicefs.yml`.
-4. Redeploys CF from its director manifest, applying
-   `operations/enable-juicefs-cf-volume-service.yml`.
+2. Reads CF's system domain and deploys `deployment/juicefs.yml` with
+   `deployment/operations/non-ha-validation.yml` and the instant-bosh DNS
+   workaround `deployment/operations/misc/ibosh-bosh-dns-fix.yml`. The
+   `misc/ibosh-cf-credentials.yml` ops reuses CF credentials in instant-bosh's
+   config server; `scripts/deploy` supplies the system domain from CF's manifest.
+3. Updates the named `juicefs` runtime-config with the built release's explicit
+   version and redeploys CF, applying
+   `deployment/operations/cf/non-ha-validation.yml`,
+   `deployment/operations/cf/enable-volume-services.yml`.
 
-The ops file enables CAPI volume services and adds registration/deregistration
-errands. Registration is a separate step, also needed after catalog changes:
+The main JuiceFS manifest colocates `register-broker` and `deregister-broker`
+as errands on the broker VM. Registration is a separate step, also needed after catalog changes:
 
 ```sh
 source bosh.env
-bosh -n -d cf run-errand register-juicefs-broker
+bosh -n -d juicefs run-errand register-broker --instance=juicefs-broker/0
 cf service-brokers
 cf marketplace -e juicefs
 ```
+
+The base `deployment/juicefs.yml` requires `juicefs_metadata` and
+`juicefs_storage` objects in a vars file, or an external-backend ops file.
+It also requires `juicefs_cf_password`, `juicefs_cf_system_domain`, and
+`juicefs_cf_ca_certificates` for registration, unless using the instant-bosh
+credential ops. Registration calls the public `https://api.<system_domain>`
+route without a cross-deployment Cloud Controller link. Use
+`deployment/operations/misc/provide-cf-api-ca.yml` to configure the trusted API CA.
+Supply `juicefs_cf_api_ca_certificate` from a vars file or `-v` when applying it.
+For singleton validation, apply `deployment/operations/non-ha-validation.yml`
+instead; it supplies both objects, Postgres/WebDAV jobs, credentials, certificates,
+and backend DNS aliases. Apply its CF companion
+`deployment/operations/cf/non-ha-validation.yml` to CF.
+For instant-bosh, the misc DNS workaround adds a JuiceFS addon that reuses
+CF's global certificates. For other directors, use the upstream DNS
+runtime-config; see [DNS setup](deployment/runtime-configs/README.md).
 
 The registration errand creates or updates the broker and enables access to its
 plans. It trusts both Cloud Controller's linked CA and the configured router CA
@@ -296,11 +318,11 @@ link. CF's volume driver consumes that link directly from deployment
 `juicefs`; they have no independent backend overrides. Broker quota operations
 reuse the mounter's rendered configuration, including its metadata engine.
 
-`operations/use-mysql-s3.yml` provides an example deployment ops file with
-external backend variables. PostgreSQL/WebDAV remains the default. Provision
+`deployment/operations/use-mysql-s3.yml` provides an example deployment ops file with
+external backend variables. PostgreSQL/WebDAV is selected by the non-HA validation ops file. Provision
 the external database, object bucket, and access credentials before initializing
-a new filesystem. The bundled backend jobs are not removed by that example ops
-file. Changing properties is not a data migration: `format --no-update` does
+a new filesystem. External backend ops can be applied directly to the base
+manifest without deploying singleton backend jobs. Changing properties is not a data migration: `format --no-update` does
 not rewrite an existing filesystem's storage settings or copy metadata/objects.
 
 The linked PostgreSQL/WebDAV configuration is validated on the live POC;
@@ -308,7 +330,7 @@ MySQL/S3/Azure Blob support has configuration tests but has not been integration
 
 ### Azure Blob Storage
 
-Use `operations/use-azure-blob.yml`, or configure the mounter's storage object:
+Use `deployment/operations/use-azure-blob.yml`, or configure the mounter's storage object:
 
 ```yaml
 juicefs:
@@ -357,8 +379,8 @@ under `/var/vcap/sys/log/juicefs-volume/`; broker logs are under
 PostgreSQL metadata and WebDAV blocks share the backend persistent disk (50 GiB
 in the example manifest). Monitor its free space: a full object store can also
 prevent PostgreSQL checkpoints, causing metadata EIO errors across all mounts.
-`operations/expand-backend-disk.yml` expands the example backend disk to 50 GiB
-when applied to the deployed manifest; increase that value for larger workloads.
+`deployment/operations/non-ha-validation.yml` sets the backend persistent disk
+to 50 GiB; increase its `persistent_disk` value for larger workloads.
 Preserve the disk and recover the database before reconnecting affected clients.
 If an app retains a disconnected FUSE mount, stop it and wait for its volume
 unmount to finish before starting it again; an immediate restart can race the

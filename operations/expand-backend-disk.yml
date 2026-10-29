@@ -1,3 +1,0 @@
-- type: replace
-  path: /instance_groups/name=juicefs-backends/persistent_disk
-  value: 51200

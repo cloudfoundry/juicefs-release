@@ -1,0 +1,87 @@
+---
+name: juicefs
+
+releases:
+- name: juicefs
+  version: latest
+
+stemcells:
+- alias: default
+  os: ubuntu-noble
+  version: latest
+
+update:
+  canaries: 1
+  max_in_flight: 1
+  canary_watch_time: 30000-60000
+  update_watch_time: 30000-60000
+
+instance_groups:
+- name: juicefs-broker
+  migrated_from:
+  - name: juicefs-mount-broker
+    az: z1
+  azs: [z1]
+  instances: 1
+  vm_type: default
+  stemcell: default
+  networks:
+  - name: default
+  jobs:
+  - name: juicefs-volume
+    release: juicefs
+    properties:
+      juicefs:
+        volume:
+          initialize: true
+        metadata: ((juicefs_metadata))
+        storage: ((juicefs_storage))
+    provides:
+      juicefs_mount: {shared: true}
+    consumes:
+      juicefs_volume: nil
+  - name: juicefs-broker
+    release: juicefs
+    provides:
+      juicefs_broker: {shared: true}
+    properties:
+      juicefs:
+        broker:
+          password: ((juicefs-broker-password))
+          plans:
+          - id: 40bf3e21-885a-4c2a-99b4-d4e8186c467e
+            name: shared
+            description: Shared JuiceFS directory without a quota
+            free: true
+            capacity_gib: 0
+            inodes: 0
+          - id: 5d3c1f42-eaa0-4d1b-88ce-b26cf6545cb1
+            name: small
+            description: Shared JuiceFS directory with 1 GiB and 1000 inodes
+            free: true
+            capacity_gib: 1
+            inodes: 1000
+    consumes:
+      juicefs_mount: {from: juicefs_mount}
+  - name: register-broker
+    release: juicefs
+    lifecycle: errand
+    consumes:
+      juicefs_broker: {from: juicefs_broker, ip_addresses: true}
+  - name: deregister-broker
+    release: juicefs
+    lifecycle: errand
+    consumes:
+      juicefs_broker: {from: juicefs_broker, ip_addresses: true}
+  properties:
+    juicefs:
+      cf:
+        username: admin
+        system_domain: ((juicefs_cf_system_domain))
+        password: ((juicefs_cf_password))
+        additional_ca_certificates: ((juicefs_cf_ca_certificates))
+        skip_ssl_validation: false
+
+variables:
+- name: juicefs-broker-password
+  type: password

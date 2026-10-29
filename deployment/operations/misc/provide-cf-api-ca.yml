@@ -1,0 +1,5 @@
+# Supply the CA certificate that signs CF's public API route certificate.
+- type: replace
+  path: /instance_groups/name=juicefs-broker/properties/juicefs/cf/additional_ca_certificates
+  value:
+  - ((juicefs_cf_api_ca_certificate))

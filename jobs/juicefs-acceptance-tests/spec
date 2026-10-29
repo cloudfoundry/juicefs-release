@@ -8,8 +8,6 @@ packages:
 - juicefs-acceptance-tests
 - ca-certificates
 consumes:
-- name: cloud_controller_https_endpoint
-  type: cloud_controller_https_endpoint
 properties:
   juicefs.acceptance.apps_domain:
     description: Shared CF application domain used for the test route.
@@ -24,6 +22,8 @@ properties:
     default: admin
   juicefs.cf.password:
     description: CF administrator password.
+  juicefs.cf.system_domain:
+    description: CF system domain used for the public API and app route.
   juicefs.cf.additional_ca_certificates:
     description: Additional CA roots for UAA and application routes.
     default: []
