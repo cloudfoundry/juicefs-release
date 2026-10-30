@@ -14,7 +14,9 @@ Their build indexes in `.final_builds/` are tracked; package blobs are stored in
 the GCS release blobstore.
 Run `git submodule update --init --recursive` after cloning. Upstream Go submodules use
 `pre_packaging` hooks to run `go mod vendor` in BOSH's temporary source copy.
-Run `devbox run -- bosh create-release --force` so Go 1.25 is available locally.
+Use Go 1.25, Git, and OpenSSL for local release creation; Devbox can provide these
+tools but is optional. Run `bosh create-release --force` when they are already on
+`PATH`, or `devbox run -- bosh create-release --force` to use the declared versions.
 Release creation needs module network access or a populated module cache;
 compilation VMs receive the generated vendor trees and build offline.
 Release-owned Go modules check in their vendor directories, go.mod/go.sum,

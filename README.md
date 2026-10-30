@@ -77,7 +77,9 @@ the endpoint, not the filesystem UUID or stored objects.
 
 - [BOSH CLI v2](https://bosh.io/docs/cli-v2/) and a reachable director with a config
   server for manifest variables.
-- [Devbox](https://www.jetify.com/devbox) for the local Go, Git, and OpenSSL tools.
+- Go 1.25, Git, and OpenSSL to build the release locally. They must be available
+  on `PATH`; Devbox is an optional convenience for providing these tools, not a
+  project requirement.
 - A director with an `ubuntu-noble` stemcell and cloud-config containing `z1`,
   network `default`, and VM type `default`.
 - An existing CF deployment named `cf`. The supplied configuration targets the
@@ -91,17 +93,23 @@ the endpoint, not the filesystem UUID or stored objects.
 ```sh
 git clone --recurse-submodules https://github.com/cloudfoundry/juicefs-release.git
 cd juicefs-release
-devbox install
 ```
 
 If you cloned without submodules, run `git submodule update --init --recursive`.
 The pinned upstream source is in `src/juicefs`. Each upstream submodule package's `pre_packaging`
 hook runs `go mod vendor` against BOSH's temporary source copy before archiving
-the package. Run release creation inside Devbox so Go 1.25 is available:
+the package. Release creation requires Go 1.25, Git, OpenSSL, and the BOSH CLI.
+Install those prerequisites directly, or use [Devbox](https://www.jetify.com/devbox)
+to enter a shell with the repository's declared Go, Git, and OpenSSL versions:
 
 ```sh
+devbox install
 devbox run -- bosh create-release --force
 ```
+
+When the prerequisites are already on `PATH`, run `bosh create-release --force`
+directly. `devbox run deploy` is likewise a convenient wrapper around
+`scripts/deploy`; the deployment workflow itself does not require Devbox.
 
 Release creation needs access to the pinned Go modules (or a populated local
 module cache). Compilation VMs receive the generated vendor trees and compile
@@ -135,27 +143,24 @@ credentials. The development environment uses a copy from
 
 ## Deploy and register
 
-From the release root:
+From the release root, with the prerequisites above available:
 
 ```sh
-devbox run deploy
+./scripts/deploy
 ```
 
-This command:
+Alternatively, run `devbox run deploy` to use the same script inside the
+optional Devbox environment. `scripts/deploy` is the source of truth for the
+deployment sequence:
 
-1. Sources `bosh.env` and creates and uploads a development release.
-2. Reads CF's system domain and deploys `deployment/juicefs.yml` with
-   `deployment/operations/non-ha-validation.yml` and the instant-bosh DNS
-   workaround `deployment/operations/misc/ibosh-bosh-dns-fix.yml`. The
-   `misc/ibosh-cf-credentials.yml` ops reuses CF credentials in instant-bosh's
-   config server; `scripts/deploy` supplies the system domain from CF's manifest.
-3. Updates the named `juicefs` runtime-config with the built release's explicit
-   version and redeploys CF, applying
-   `deployment/operations/cf/non-ha-validation.yml`,
-   `deployment/operations/cf/enable-volume-services.yml`.
+It reads credentials from `bosh.env`, builds and uploads the release, deploys
+JuiceFS with the non-HA validation configuration, updates the JuiceFS runtime
+config, and redeploys CF with the volume-service configuration. See the
+deployment and operations files for environment-specific settings.
 
 The main JuiceFS manifest colocates `register-broker` and `deregister-broker`
-as errands on the broker VM. Registration is a separate step, also needed after catalog changes:
+as errands on the broker VM. Registration is a separate step, also needed after
+catalog changes:
 
 ```sh
 source bosh.env
@@ -274,8 +279,8 @@ retries do not reset quotas. Pre-quota instances retain the unlimited shared
 plan. Broker VM replacement does not lose these records.
 
 Plan configuration changes affect **new instances only**. Plan upgrades and
-downgrades are not supported. Run `devbox run deploy` and the registration
-errand after changing the catalog.
+downgrades are not supported. Run `./scripts/deploy` (or `devbox run deploy`)
+and the registration errand after changing the catalog.
 
 Quotas limit directory usage; they do not reserve backend disk space. Physical
 object consumption can differ because of compression, deleted objects, and
@@ -318,11 +323,13 @@ link. CF's volume driver consumes that link directly from deployment
 `juicefs`; they have no independent backend overrides. Broker quota operations
 reuse the mounter's rendered configuration, including its metadata engine.
 
-`deployment/operations/use-mysql-s3.yml` provides an example deployment ops file with
-external backend variables. PostgreSQL/WebDAV is selected by the non-HA validation ops file. Provision
+`deployment/operations/use-mysql-s3.yml` provides an example deployment ops file
+with external backend variables. PostgreSQL/WebDAV is selected by the non-HA
+validation ops file. Provision
 the external database, object bucket, and access credentials before initializing
 a new filesystem. External backend ops can be applied directly to the base
-manifest without deploying singleton backend jobs. Changing properties is not a data migration: `format --no-update` does
+manifest without deploying singleton backend jobs. Changing properties is not a
+data migration: `format --no-update` does
 not rewrite an existing filesystem's storage settings or copy metadata/objects.
 
 The linked PostgreSQL/WebDAV configuration is validated on the live POC;
@@ -395,10 +402,13 @@ Run all suites with race detection and randomized order, and report statement
 coverage excluding generated fakes:
 
 ```sh
-devbox run -- scripts/test-go
-GINKGO_SEED=8675309 devbox run -- scripts/test-go
-devbox run -- scripts/generate-fakes
+scripts/test-go
+GINKGO_SEED=8675309 scripts/test-go
+scripts/generate-fakes
 ```
+
+These commands require Go 1.25 on `PATH`; use `devbox run --` before a command
+if you want Devbox to provide the declared tool versions.
 
 Coverage profiles default to `/tmp/juicefs-release-coverage`; override with
 `COVERAGE_DIR`. Tests and fake generation use the checked-in vendor trees with
