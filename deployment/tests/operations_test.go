@@ -12,6 +12,9 @@ import (
 
 type manifest struct {
 	InstanceGroups []instanceGroup `yaml:"instance_groups"`
+	Variables      []struct {
+		Name string `yaml:"name"`
+	} `yaml:"variables"`
 }
 
 type instanceGroup struct {
@@ -151,6 +154,26 @@ func TestAcceptanceErrandOpsAgainstUpstreamManifestWhenAvailable(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("acceptance errand instance group not added")
+	}
+}
+
+func TestAcceptanceErrandOpsResolveAgainstStandardFixture(t *testing.T) {
+	got := interpolateWithVars(t, "fixtures/cf-deployment.yml", "operations/cf/enable-juicefs-acceptance-tests.yml",
+		"juicefs_release_version=test",
+		"juicefs_acceptance_apps_domain=apps.example.test",
+	)
+	assertGroupVMType(t, got, "juicefs-acceptance-tests", "minimal")
+	if findJob(t, got, "juicefs-acceptance-tests", "juicefs-acceptance-tests").Name == "" {
+		t.Fatal("acceptance job missing")
+	}
+	for _, required := range []string{"cf_admin_password", "router_ssl"} {
+		found := false
+		for _, variable := range got.Variables {
+			found = found || variable.Name == required
+		}
+		if !found {
+			t.Errorf("acceptance manifest variable %q missing", required)
+		}
 	}
 }
 

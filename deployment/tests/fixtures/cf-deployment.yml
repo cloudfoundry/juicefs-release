@@ -10,12 +10,15 @@ addons:
     release: bosh-dns-aliases
     properties:
       aliases: []
-variables: []
+variables:
+- name: cf_admin_password
+- name: router_ssl
 instance_groups:
 - name: api
   jobs:
   - name: cloud_controller_ng
     properties:
+      system_domain: ((system_domain))
       cc: {}
 - name: cc-worker
   jobs:
