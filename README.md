@@ -54,9 +54,10 @@ on `spec.bootstrap` when `juicefs.volume.initialize` is enabled.
 `juicefs format --no-update` leaves existing filesystems unchanged; backend errors
 fail startup.
 
-The CF runtime-config adds the volume driver to `compute`. It consumes the
-broker VM's shared `juicefs_mount` BOSH link for
-the filesystem name and all backend settings, credentials, and trust roots.
+The default CF runtime-config adds the volume driver to upstream cf-deployment's
+`diego-cell` group; an instant-bosh compatibility variant targets its consolidated
+`compute` group. The driver consumes the broker VM's shared `juicefs_mount` BOSH
+link for the filesystem name and all backend settings, credentials, and trust roots.
 The broker's volume mounter is the authoritative configuration source;
 registration errands are colocated on `juicefs-broker` in the JuiceFS deployment.
 
@@ -82,9 +83,10 @@ the endpoint, not the filesystem UUID or stored objects.
   project requirement.
 - A director with an `ubuntu-noble` stemcell and cloud-config containing `z1`,
   network `default`, and VM type `default`.
-- An existing CF deployment named `cf`. The supplied configuration targets the
-  lab's `control` and `compute` groups; adapt the runtime-config and ops file to
-  your topology before using another deployment.
+- An existing CF deployment named `cf`. Default CF ops/runtime-configs target
+  upstream cf-deployment groups. Instant-bosh's consolidated group names are
+  isolated in `deployment/operations/cf/instant-bosh/` and
+  `deployment/runtime-configs/instant-bosh/`.
 - Local release blobs and vendored-package build indexes, as described below.
 - A CF CLI authenticated to the target organization and space for app testing.
 
@@ -409,6 +411,15 @@ scripts/generate-fakes
 
 These commands require Go 1.25 on `PATH`; use `devbox run --` before a command
 if you want Devbox to provide the declared tool versions.
+
+Run the deployment configuration tests with:
+
+```sh
+scripts/test-deployment
+```
+
+When instant-bosh is checked out at `.acceptance-tools/instant-bosh`, the tests
+also validate the default ops against its embedded upstream cf-deployment manifest.
 
 Coverage profiles default to `/tmp/juicefs-release-coverage`; override with
 `COVERAGE_DIR`. Tests and fake generation use the checked-in vendor trees with

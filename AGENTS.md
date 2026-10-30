@@ -93,9 +93,9 @@ The JuiceFS deployment runs Postgres and WebDAV in `juicefs-backends`, separatel
 from the broker and full-root `juicefs-volume` mount in `juicefs-broker`.
 This allows bootstrap initialization to connect to the backends. The launcher
 also allows a colocated Azure PostgreSQL auth proxy to start concurrently.
-The CF runtime-config targets the
-live `compute` group for the isolated
-volume driver. `juicefs-volume` is a foreground FUSE client managed
+The default CF runtime-config targets upstream cf-deployment's `diego-cell` for
+the isolated volume driver; instant-bosh compatibility targets `compute`.
+`juicefs-volume` is a foreground FUSE client managed
 directly by Monit. Its
 launcher checks the host `/dev/fuse` device and logs under
 `/var/vcap/sys/log/juicefs-volume/`. JuiceFS enables go-fuse direct mounting, so
@@ -136,6 +136,8 @@ details. `scripts/deploy` is the source of truth for the instant-bosh deployment
 sequence. The CF runtime-config consumes the broker mounter's shared
 `juicefs_mount` link; the mounter defines the backend configuration and
 filesystem name. The driver mounts only the service-instance subdirectory.
+Deployment ops/runtime-config target coverage is in `deployment/tests`; run
+`go test ./...` there with BOSH CLI installed.
 
 Service bindings are synchronous and stateless; binding retrieval is not
 implemented. The optional `mount` binding parameter selects an absolute container

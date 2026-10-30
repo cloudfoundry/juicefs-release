@@ -1,4 +1,5 @@
-# Apply to CF when using the singleton backends in ../non-ha-validation.yml.
+# Adds validation backend DNS aliases to upstream cf-deployment. The alias
+# targets the JuiceFS deployment and is independent of CF instance-group names.
 - type: replace
   path: /addons/name=bosh-dns-aliases/jobs/name=bosh-dns-aliases/properties/aliases/domain=blobstore.service.juicefs.internal?
   value:

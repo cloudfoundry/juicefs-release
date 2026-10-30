@@ -6,7 +6,7 @@
     azs: [z1]
     instances: 1
     lifecycle: errand
-    vm_type: default
+    vm_type: minimal
     stemcell: default
     networks: [{name: default}]
     jobs:

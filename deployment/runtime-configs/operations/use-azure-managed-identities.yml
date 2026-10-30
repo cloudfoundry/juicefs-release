@@ -1,4 +1,4 @@
-# Apply to deployment/runtime-configs/juicefs-volume-driver.yml; requires BPM on compute.
+# Apply to the selected JuiceFS volume-driver runtime-config; requires BPM on each targeted CF Diego cell.
 - type: replace
   path: /addons/name=juicefs-volume-driver/jobs/-
   value:

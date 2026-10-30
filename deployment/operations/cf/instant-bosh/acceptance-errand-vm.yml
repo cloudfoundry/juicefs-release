@@ -1,0 +1,4 @@
+# instant-bosh cloud-config exposes only the `default` VM type.
+- type: replace
+  path: /instance_groups/name=juicefs-acceptance-tests/vm_type
+  value: default

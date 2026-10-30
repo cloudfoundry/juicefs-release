@@ -2,9 +2,10 @@
 
 ## JuiceFS volume driver
 
-[`juicefs-volume-driver.yml`](juicefs-volume-driver.yml) installs the JuiceFS
-volume driver on Cloud Foundry Diego cells. It adds the `juicefs-volume-driver`
-job to the `compute` instance group in deployment `cf`, enabling cells to mount
+[`juicefs-volume-driver.yml`](juicefs-volume-driver.yml) is the default runtime-config
+for upstream `cf-deployment`. It installs the JuiceFS volume driver on Diego
+cells by adding the `juicefs-volume-driver` job to the `diego-cell` instance
+group in deployment `cf`, enabling cells to mount
 the service-instance directories provisioned by the JuiceFS broker. Adjust the
 addon's `include` filters if your CF deployment or cell group has another name.
 
@@ -43,3 +44,15 @@ For instant-bosh development environments, DNS is currently embedded only in CF.
 Apply [`../operations/misc/ibosh-bosh-dns-fix.yml`](../operations/misc/ibosh-bosh-dns-fix.yml)
 to JuiceFS to reuse CF's global DNS certificates. Omit this workaround when the
 director already supplies DNS through a runtime-config.
+
+## Standard cf-deployment and instant-bosh
+
+The default runtime-config and CF operations target upstream `cf-deployment`
+groups. For instant-bosh's consolidated manifest, use the matching files under
+`instant-bosh/`; its `api`, `cc-worker`, and `scheduler` groups are combined as
+`control`, while `diego-cell` becomes `compute`. Acceptance and Devbox scripts
+select the instant-bosh variants.
+
+Run `scripts/test-deployment` from the repository root to check deployment
+operations and runtime-config targets. It uses representative fixtures and, when
+available, validates against the cf-deployment manifest embedded by instant-bosh.
