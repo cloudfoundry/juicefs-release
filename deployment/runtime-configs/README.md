@@ -54,5 +54,5 @@ groups. For instant-bosh's consolidated manifest, use the matching files under
 select the instant-bosh variants.
 
 Run `scripts/test-deployment` from the repository root to check deployment
-operations and runtime-config targets. It uses representative fixtures and, when
-available, validates against the cf-deployment manifest embedded by instant-bosh.
+operations and runtime-config targets against the checked-in standard CF and
+instant-bosh fixtures.

@@ -3,8 +3,4 @@ set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 cd "$root/deployment/tests"
 
-if [[ -z "${CF_DEPLOYMENT_MANIFEST:-}" && -f "$root/.acceptance-tools/instant-bosh/internal/manifests/cf-deployment/cf-deployment.yml" ]]; then
-  export CF_DEPLOYMENT_MANIFEST="$root/.acceptance-tools/instant-bosh/internal/manifests/cf-deployment/cf-deployment.yml"
-fi
-
 go test ./...

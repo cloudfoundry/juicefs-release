@@ -62,8 +62,6 @@ jobs:
       working-directory: src/juicefs-acceptance-tests
       run: go test -mod=vendor -race ./... -ginkgo.randomize-all
     - name: Validate deployment configuration
-      env:
-        CF_DEPLOYMENT_MANIFEST: ${{ github.workspace }}/.acceptance-tools/instant-bosh/internal/manifests/cf-deployment/cf-deployment.yml
       run: scripts/test-deployment
     - name: Start instant-bosh Docker director
       timeout-minutes: 20

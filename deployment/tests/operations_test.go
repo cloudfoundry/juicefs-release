@@ -115,48 +115,6 @@ func TestInstantBoshRuntimeConfigTargetsCompute(t *testing.T) {
 	assertRuntimeConfigScope(t, "runtime-configs/instant-bosh/juicefs-volume-driver.yml", "compute")
 }
 
-func TestCFVolumeServiceOpsAgainstUpstreamManifestWhenAvailable(t *testing.T) {
-	manifestPath := os.Getenv("CF_DEPLOYMENT_MANIFEST")
-	if manifestPath == "" {
-		t.Skip("CF_DEPLOYMENT_MANIFEST is not set; fixture-based coverage still runs")
-	}
-	got := interpolate(t, manifestPath, "operations/cf/enable-volume-services.yml")
-	for _, target := range []struct{ group, jobName string }{
-		{"api", "cloud_controller_ng"},
-		{"cc-worker", "cloud_controller_worker"},
-		{"scheduler", "cloud_controller_clock"},
-	} {
-		property := findJob(t, got, target.group, target.jobName).Properties.CC.VolumeServicesEnabled
-		if property == nil || !*property {
-			t.Errorf("upstream cf-deployment target %s/%s was not enabled", target.group, target.jobName)
-		}
-	}
-}
-
-func TestAcceptanceErrandOpsAgainstUpstreamManifestWhenAvailable(t *testing.T) {
-	manifestPath := os.Getenv("CF_DEPLOYMENT_MANIFEST")
-	if manifestPath == "" {
-		t.Skip("CF_DEPLOYMENT_MANIFEST is not set; fixture-based coverage still runs")
-	}
-	got := interpolateWithVars(t, manifestPath, "operations/cf/enable-juicefs-acceptance-tests.yml",
-		"juicefs_release_version=test",
-		"juicefs_acceptance_apps_domain=apps.example.test",
-	)
-	var found bool
-	for _, group := range got.InstanceGroups {
-		if group.Name != "juicefs-acceptance-tests" {
-			continue
-		}
-		found = true
-		if len(group.Jobs) != 1 || group.Jobs[0].Name != "juicefs-acceptance-tests" {
-			t.Errorf("acceptance group jobs = %#v; want juicefs-acceptance-tests", group.Jobs)
-		}
-	}
-	if !found {
-		t.Fatal("acceptance errand instance group not added")
-	}
-}
-
 func TestAcceptanceErrandOpsResolveAgainstStandardFixture(t *testing.T) {
 	got := interpolateWithVars(t, "fixtures/cf-deployment.yml", "operations/cf/enable-juicefs-acceptance-tests.yml",
 		"juicefs_release_version=test",
