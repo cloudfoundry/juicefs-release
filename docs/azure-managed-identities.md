@@ -108,8 +108,8 @@ hardcoded for public Azure; sovereign-cloud PostgreSQL requires upstream changes
 `deployment/operations/use-azure-managed-identities.yml` adds BPM and the proxy to the
 broker group and replaces the mounter's backend settings. The matching
 `deployment/runtime-configs/operations/use-azure-managed-identities.yml` adds a proxy to each
-targeted CF compute VM. **BPM must already be colocated on compute** (as in
-cf-deployment); add it in your CF manifest if absent. The proxy shares the host
+targeted `diego-cell`. **BPM must already be colocated on each targeted cell** (as in
+upstream cf-deployment); add it in your CF manifest if absent. The proxy shares the host
 network, as required for loopback clients, DNS, and IMDS.
 
 Both clients consume a local `azure_postgres_proxy` link and validate colocation;
@@ -159,7 +159,7 @@ password and a CA bundle trusted for that public API route. Install BOSH DNS
 using your director's standard runtime-config before deploying JuiceFS.
 
 ```sh
-system_domain=$(bosh -d cf manifest | bosh interpolate - --path /instance_groups/name=control/jobs/name=cloud_controller_ng/properties/system_domain)
+system_domain=$(bosh -d cf manifest | bosh interpolate - --path /instance_groups/name=api/jobs/name=cloud_controller_ng/properties/system_domain)
 bosh -n -d cf deploy <(bosh -d cf manifest) \
   -o deployment/operations/cf/enable-volume-services.yml
 bosh -n -d juicefs deploy deployment/juicefs.yml \
@@ -194,7 +194,9 @@ your deployment-specific manifest after validating the external backends.
 The instant-bosh CLI keeps generated CF credentials in its config server and
 embeds DNS in CF. Use the following JuiceFS ops to source CF credentials and
 reuse the global `/dns_*` certificates already defined by the CF deployment,
-instead of supplying the standard-director variables and DNS configuration above:
+instead of supplying the standard-director variables and DNS configuration above.
+The instant-bosh CF manifest consolidates upstream `api` into `control`; use
+`control` when reading the CF system domain in this environment.
 
 ```sh
 bosh -n -d juicefs deploy deployment/juicefs.yml \

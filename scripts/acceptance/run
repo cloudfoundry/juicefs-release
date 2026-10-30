@@ -57,6 +57,7 @@ case "${1:-}" in
     bosh upload-release "$work/juicefs.tgz"
     version=$(bosh interpolate "$work/release.yml" --path /version)
     bosh -d cf manifest > "$work/cf.yml"
+    # This script runs instant-bosh's consolidated CF manifest (`control`).
     domain=$(bosh interpolate "$work/cf.yml" --path /instance_groups/name=control/jobs/name=cloud_controller_ng/properties/system_domain)
     stemcell=$(bosh interpolate "$work/cf.yml" --path /stemcells/alias=default/version)
     aliases=$(bosh interpolate "$work/cf.yml" --path /releases/name=bosh-dns-aliases/version)
@@ -70,12 +71,13 @@ case "${1:-}" in
       -v juicefs_release_version="$version" \
       -v acceptance_stemcell_version="$stemcell" \
       -v acceptance_dns_aliases_version="$aliases"
-    bosh update-config --type=runtime --name=juicefs deployment/runtime-configs/juicefs-volume-driver.yml \
+    bosh update-config --type=runtime --name=juicefs deployment/runtime-configs/instant-bosh/juicefs-volume-driver.yml \
       -v juicefs_release_version="$version"
     bosh -d cf deploy "$work/cf.yml" \
       -o deployment/operations/cf/non-ha-validation.yml \
-      -o deployment/operations/cf/enable-volume-services.yml \
+      -o deployment/operations/cf/instant-bosh/enable-volume-services.yml \
       -o deployment/operations/cf/enable-juicefs-acceptance-tests.yml \
+      -o deployment/operations/cf/instant-bosh/acceptance-errand-vm.yml \
       -v juicefs_release_version="$version" \
       -v juicefs_acceptance_apps_domain="$domain"
     bosh -d juicefs run-errand register-broker --instance=juicefs-broker/0 --download-logs --logs-dir="$artifacts"

@@ -15,7 +15,7 @@ release_version=$(bosh interpolate "$release_manifest" --path /version)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 bosh -d cf manifest > "$work/cf.yml"
-system_domain=$(bosh interpolate "$work/cf.yml" --path /instance_groups/name=control/jobs/name=cloud_controller_ng/properties/system_domain)
+system_domain=$(bosh interpolate "$work/cf.yml" --path /instance_groups/name=api/jobs/name=cloud_controller_ng/properties/system_domain)
 
 bosh -n -d juicefs deploy deployment/juicefs.yml \
   -o deployment/operations/non-ha-validation.yml \
@@ -24,9 +24,9 @@ bosh -n -d juicefs deploy deployment/juicefs.yml \
   -v juicefs_cf_system_domain="$system_domain"
 
 bosh update-config --type=runtime --name=juicefs -n \
-  deployment/runtime-configs/juicefs-volume-driver.yml \
+  deployment/runtime-configs/instant-bosh/juicefs-volume-driver.yml \
   -v juicefs_release_version="$release_version"
 
 bosh -n -d cf deploy "$work/cf.yml" \
   -o deployment/operations/cf/non-ha-validation.yml \
-  -o deployment/operations/cf/enable-volume-services.yml
+  -o deployment/operations/cf/instant-bosh/enable-volume-services.yml

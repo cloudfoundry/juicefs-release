@@ -37,6 +37,7 @@ jobs:
         cache-dependency-path: |
           src/juicefs/go.sum
           src/juicefs-acceptance-tests/go.sum
+          deployment/tests/go.sum
     - name: Load pinned tool versions
       run: |
         source scripts/acceptance/versions.env
@@ -60,6 +61,8 @@ jobs:
     - name: Run local acceptance component checks
       working-directory: src/juicefs-acceptance-tests
       run: go test -mod=vendor -race ./... -ginkgo.randomize-all
+    - name: Validate deployment configuration
+      run: scripts/test-deployment
     - name: Start instant-bosh Docker director
       timeout-minutes: 20
       run: |
