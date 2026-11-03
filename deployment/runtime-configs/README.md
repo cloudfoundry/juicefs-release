@@ -36,7 +36,7 @@ for backend configuration, required variables, and deployment commands.
 ## BOSH DNS prerequisite
 
 Install BOSH DNS through the upstream
-[`bosh-deployment/runtime-configs/dns.yml`](https://github.com/cloudfoundry/bosh-deployment/blob/master/runtime-configs/dns.yml).
+[`bosh-deployment/runtime-configs/dns.yml`](https://github.com/cloudfoundry/bosh-deployment/blob/main/runtime-configs/dns.yml).
 This is separate from the JuiceFS volume-driver runtime-config.
 
 For instant-bosh development environments, DNS is currently embedded only in CF.
