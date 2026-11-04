@@ -60,7 +60,9 @@ The base `deployment/juicefs.yml` accepts `juicefs_metadata` and
 singleton Postgres/WebDAV, their DNS aliases, and the 50 GiB backend disk.
 Instant-bosh DNS and credential adjustments live in
 `deployment/operations/misc/`; other directors should use their normal DNS and
-credential configuration. The director needs an `ubuntu-noble` stemcell and
+credential configuration. For director-side DNS prerequisites and the upstream runtime configuration, see
+[`deployment/runtime-configs/README.md`](deployment/runtime-configs/README.md).
+The director needs an `ubuntu-noble` stemcell and
 cloud-config with `z1`, the `default` network, and `default` VM type. The JuiceFS
 FUSE client runs directly on the VM under Monit so it can access host `/dev/fuse`.
 The singleton
