@@ -26,9 +26,12 @@ run `scripts/generate-fakes` to regenerate fakes using the pinned vendored tool.
 `juicefs-acceptance-tests` packages a static test app and a compiled Ginkgo BOSH
 errand. Local checks include a TLS CF API fixture; the live suite requires
 `JUICEFS_ACCEPTANCE_CONFIG`. CI orchestration lives in `scripts/acceptance/run`;
+failure diagnostics are captured through `GinkgoWriter` before app cleanup;
 see `docs/acceptance-testing.md`. The workflow currently uses the standard
-GitHub-hosted `ubuntu-latest` runner. Keep instant-bosh CLI/image pins together
-in `scripts/acceptance/versions.env`. Run the orchestration only on disposable hosts.
+GitHub-hosted `ubuntu-latest` runner. CI currently disables swap and samples
+resource pressure; see the acceptance testing documentation for the diagnostic
+artifacts. Keep instant-bosh CLI/image pins together in
+`scripts/acceptance/versions.env`. Run the orchestration only on disposable hosts.
 Do not check generated vendor trees for upstream submodules into Git.
 `packages/juicefs` contains only the upstream client. Release-owned tools have
 separate packages and Go modules under matching `src/` directories; these compile

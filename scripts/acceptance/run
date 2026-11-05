@@ -89,6 +89,16 @@ case "${1:-}" in
     ;;
   diagnostics)
     # Every operation is best-effort: an early deployment failure may leave no VMs.
+    if [[ -f "$work/resource-sampler.pid" ]]; then
+      read -r sampler_pid < "$work/resource-sampler.pid"
+      kill "$sampler_pid" 2>/dev/null || true
+      rm -f "$work/resource-sampler.pid"
+    fi
+    sudo -n dmesg --ctime > "$artifacts/host-kernel.log" 2>&1 || true
+    # Inspect state without environment variables or other container secrets.
+    docker ps -aq | while read -r container; do
+      docker inspect --format '{{.Name}} {{json .State}}' "$container"
+    done > "$artifacts/docker-container-state.log" 2>&1 || true
     free -h > "$artifacts/host-memory.log" 2>&1 || true
     df -h > "$artifacts/host-disk.log" 2>&1 || true
     docker system df > "$artifacts/docker-disk.log" 2>&1 || true
