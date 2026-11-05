@@ -189,29 +189,18 @@ not the Azure deployment entry point. The bundled PostgreSQL/WebDAV backend
 group is retained by the example operations; remove unused jobs/resources in
 your deployment-specific manifest after validating the external backends.
 
-### When using instant-bosh
+### instant-bosh lab and acceptance testing
 
-The instant-bosh CLI keeps generated CF credentials in its config server and
-embeds DNS in CF. Use the following JuiceFS ops to source CF credentials and
-reuse the global `/dns_*` certificates already defined by the CF deployment,
-instead of supplying the standard-director variables and DNS configuration above.
-The instant-bosh CF manifest consolidates upstream `api` into `control`; use
-`control` when reading the CF system domain in this environment.
-
-```sh
-bosh -n -d juicefs deploy deployment/juicefs.yml \
-  -o deployment/operations/misc/ibosh-bosh-dns-fix.yml \
-  -o deployment/operations/misc/ibosh-cf-credentials.yml \
-  -o deployment/operations/use-azure-managed-identities.yml \
-  --vars-file azure-vars.yml
-```
-
-The `ibosh-cf-credentials.yml` ops supplies the admin password and router CA from
-instant-bosh's config server. Set `juicefs_cf_system_domain` from the generated
-CF manifest; TLS verification remains enabled.
-The skip-validation ops file is only for disposable tests. If using instant-bosh
-for a production deployment, validate the credential lifecycle, CA trust, and
-DNS behavior in that environment before relying on it.
+The deployment instructions above target upstream cf-deployment. instant-bosh is
+used by this repository for lab and acceptance testing; its consolidated CF
+manifest maps upstream `api`, `cc-worker`, and `scheduler` to `control`, and
+`diego-cell` to `compute`. The acceptance orchestration selects the matching
+[`control` CF operations](../deployment/operations/cf/instant-bosh/enable-volume-services.yml)
+and [`compute` runtime-config](../deployment/runtime-configs/instant-bosh/juicefs-volume-driver.yml),
+as well as instant-bosh's credential and DNS compatibility ops. Follow
+[`scripts/acceptance/run`](../scripts/acceptance/run) for that test environment's
+deployment sequence; do not substitute its compatibility files into the
+upstream cf-deployment commands above.
 
 Bootstrap initialization now runs in the supervised mount launcher, rather than
 `pre-start`, so Monit can start the colocated proxy concurrently. It retries
