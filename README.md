@@ -423,8 +423,9 @@ Run the deployment configuration tests with:
 scripts/test-deployment
 ```
 
-When instant-bosh is checked out at `.acceptance-tools/instant-bosh`, the tests
-also validate the default ops against its embedded upstream cf-deployment manifest.
+The tests validate deployment operations and runtime-config targets against
+checked-in standard cf-deployment and instant-bosh fixtures. See
+[deployment tests](deployment/tests/README.md) for coverage and prerequisites.
 
 Coverage profiles default to `/tmp/juicefs-release-coverage`; override with
 `COVERAGE_DIR`. Tests and fake generation use the checked-in vendor trees with
