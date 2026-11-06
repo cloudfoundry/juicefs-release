@@ -13,3 +13,15 @@ are in [`scripts/acceptance/run`](../scripts/acceptance/run).
 
 On failure, download the acceptance artifact from the GitHub Actions run summary
 for test results and diagnostic logs.
+
+CI disables all runner swap for the current memory-pressure experiment. It
+samples host memory, swap activity, CPU/I/O/memory pressure and container usage
+throughout the workflow in `resource-timeline.log`. Diagnostics also save kernel
+messages in `host-kernel.log` and container state (including `OOMKilled`) in
+`docker-container-state.log`.
+
+On a spec failure, the errand writes the build state/error, web-process stats,
+and recent application/staging logs from CF Log Cache to `GinkgoWriter` before
+deleting the application. These diagnostics appear in the failed spec's output;
+collection is best-effort and uses a separate timeout so cleanup still runs if
+the spec context has expired or Log Cache is unavailable.

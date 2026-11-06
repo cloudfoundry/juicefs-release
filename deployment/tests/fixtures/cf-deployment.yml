@@ -1,0 +1,36 @@
+---
+name: cf
+releases:
+- name: bosh-dns-aliases
+  version: 0.0.5
+addons:
+- name: bosh-dns-aliases
+  jobs:
+  - name: bosh-dns-aliases
+    release: bosh-dns-aliases
+    properties:
+      aliases: []
+variables:
+- name: cf_admin_password
+- name: router_ssl
+instance_groups:
+- name: api
+  jobs:
+  - name: cloud_controller_ng
+    properties:
+      system_domain: ((system_domain))
+      cc: {}
+- name: cc-worker
+  jobs:
+  - name: cloud_controller_worker
+    properties:
+      cc: {}
+- name: scheduler
+  jobs:
+  - name: cloud_controller_clock
+    properties:
+      cc: {}
+- name: diego-cell
+  jobs:
+  - name: rep
+    properties: {}

@@ -1,0 +1,15 @@
+# Instant-bosh only: the upstream diego-cell group is consolidated as `compute`.
+releases:
+- name: juicefs
+  version: ((juicefs_release_version))
+
+addons:
+- name: juicefs-volume-driver
+  include:
+    deployments: [cf]
+    instance_groups: [compute]
+  jobs:
+  - name: juicefs-volume-driver
+    release: juicefs
+    consumes:
+      juicefs_volume: {from: juicefs_mount, deployment: juicefs}

@@ -18,13 +18,11 @@ jobs:
     env:
       GOTOOLCHAIN: local
     steps:
-    - name: Add 8 GiB swap
+    - name: Disable runner swap
       run: |
-        sudo install -m 600 /dev/null /swapfile-juicefs
-        sudo fallocate -l 8G /swapfile-juicefs
-        sudo mkswap /swapfile-juicefs
-        sudo swapon /swapfile-juicefs
+        sudo swapoff --all
         swapon --show
+        test "$(swapon --show --noheadings | wc -l)" -eq 0
         free -h
         df -h /
     - uses: actions/checkout@v4
@@ -37,12 +35,18 @@ jobs:
         cache-dependency-path: |
           src/juicefs/go.sum
           src/juicefs-acceptance-tests/go.sum
+          deployment/tests/go.sum
     - name: Load pinned tool versions
       run: |
         source scripts/acceptance/versions.env
         echo "INSTANT_BOSH_REVISION=$INSTANT_BOSH_REVISION" >> "$GITHUB_ENV"
         echo "BOSH_CLI_VERSION=$BOSH_CLI_VERSION" >> "$GITHUB_ENV"
         echo "ACCEPTANCE_WORK_DIR=$RUNNER_TEMP/juicefs-acceptance" >> "$GITHUB_ENV"
+    - name: Start resource sampling
+      run: |
+        mkdir -p "$ACCEPTANCE_WORK_DIR/artifacts"
+        nohup bash scripts/acceptance/sample-resources > "$ACCEPTANCE_WORK_DIR/artifacts/resource-timeline.log" 2>&1 < /dev/null &
+        echo "$!" > "$ACCEPTANCE_WORK_DIR/resource-sampler.pid"
     - uses: actions/checkout@v4
       with:
         repository: rkoster/instant-bosh
@@ -60,6 +64,8 @@ jobs:
     - name: Run local acceptance component checks
       working-directory: src/juicefs-acceptance-tests
       run: go test -mod=vendor -race ./... -ginkgo.randomize-all
+    - name: Validate deployment configuration
+      run: scripts/test-deployment
     - name: Start instant-bosh Docker director
       timeout-minutes: 20
       run: |

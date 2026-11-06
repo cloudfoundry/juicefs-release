@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -128,6 +129,15 @@ var _ = Describe("a bound JuiceFS volume", func() {
 		app, err := cf.Applications.Create(ctx, appRequest)
 		Expect(err).NotTo(HaveOccurred())
 		cleanup("application and its binding", func(ctx context.Context) (string, error) { return cf.Applications.Delete(ctx, app.GUID) })
+		var buildGUID string
+		DeferCleanup(func() {
+			if CurrentSpecReport().Failed() {
+				// Run before app deletion, even when the spec context has expired.
+				diagnosticCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+				defer cancel()
+				captureAppDiagnostics(diagnosticCtx, cf, app.GUID, buildGUID)
+			}
+		})
 		job, _, err = cf.ServiceCredentialBindings.Create(ctx, resource.NewServiceCredentialBindingCreateApp(instance.GUID, app.GUID).WithJSONParameters(`{"mount":"/data"}`))
 		wait(ctx, job, err)
 
@@ -141,6 +151,7 @@ var _ = Describe("a bound JuiceFS volume", func() {
 		Expect(cf.Packages.PollReady(ctx, pkg.GUID, poll)).To(Succeed())
 		build, err := cf.Builds.Create(ctx, resource.NewBuildCreate(pkg.GUID))
 		Expect(err).NotTo(HaveOccurred())
+		buildGUID = build.GUID
 		Expect(cf.Builds.PollStaged(ctx, build.GUID, poll)).To(Succeed())
 		build, err = cf.Builds.Get(ctx, build.GUID)
 		Expect(err).NotTo(HaveOccurred())
@@ -221,6 +232,77 @@ var _ = Describe("a bound JuiceFS volume", func() {
 		Expect(data).To(Equal(guid))
 	}, SpecTimeout(25*time.Minute))
 })
+
+func captureAppDiagnostics(ctx context.Context, cf *client.Client, appGUID, buildGUID string) {
+	fmt.Fprintf(GinkgoWriter, "\nCF failure diagnostics for app %s\n", appGUID)
+	if buildGUID != "" {
+		build, err := cf.Builds.Get(ctx, buildGUID)
+		if err != nil {
+			fmt.Fprintf(GinkgoWriter, "Build %s diagnostics unavailable: %v\n", buildGUID, err)
+		} else {
+			fmt.Fprintf(GinkgoWriter, "Build %s state: %s\n", buildGUID, build.State)
+			if build.Error != nil {
+				fmt.Fprintf(GinkgoWriter, "Build error: %s\n", *build.Error)
+			}
+		}
+	}
+	stats, err := cf.Processes.GetStatsForApp(ctx, appGUID, "web")
+	if err != nil {
+		fmt.Fprintf(GinkgoWriter, "Web process diagnostics unavailable: %v\n", err)
+	} else if data, err := json.Marshal(stats); err == nil {
+		fmt.Fprintf(GinkgoWriter, "Web process stats: %s\n", data)
+	}
+	root, err := cf.Root.Get(ctx)
+	if err != nil {
+		fmt.Fprintf(GinkgoWriter, "Log Cache discovery failed: %v\n", err)
+		return
+	}
+	if root.Links.LogCache.Href == "" {
+		fmt.Fprintln(GinkgoWriter, "Log Cache endpoint is not advertised by CAPI")
+		return
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		strings.TrimRight(root.Links.LogCache.Href, "/")+"/api/v1/read/"+appGUID+"?envelope_types=LOG&descending=true&limit=100", nil)
+	if err != nil {
+		fmt.Fprintf(GinkgoWriter, "Log Cache request failed: %v\n", err)
+		return
+	}
+	response, err := cf.ExecuteAuthRequest(req)
+	if err != nil {
+		fmt.Fprintf(GinkgoWriter, "Recent app logs unavailable: %v\n", err)
+		return
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		fmt.Fprintf(GinkgoWriter, "Recent app logs unavailable: HTTP %d\n", response.StatusCode)
+		return
+	}
+	var logs struct {
+		Envelopes struct {
+			Batch []struct {
+				Timestamp string            `json:"timestamp"`
+				Tags      map[string]string `json:"tags"`
+				Log       struct {
+					Payload string `json:"payload"`
+				} `json:"log"`
+			} `json:"batch"`
+		} `json:"envelopes"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 2<<20)).Decode(&logs); err != nil {
+		fmt.Fprintf(GinkgoWriter, "Decode recent app logs: %v\n", err)
+		return
+	}
+	fmt.Fprintln(GinkgoWriter, "Recent app logs (oldest first):")
+	for i := len(logs.Envelopes.Batch) - 1; i >= 0; i-- {
+		entry := logs.Envelopes.Batch[i]
+		payload, err := base64.StdEncoding.DecodeString(entry.Log.Payload)
+		if err != nil {
+			fmt.Fprintf(GinkgoWriter, "Decode log payload: %v\n", err)
+			continue
+		}
+		fmt.Fprintf(GinkgoWriter, "%s [%s/%s] %s\n", entry.Timestamp, entry.Tags["source_type"], entry.Tags["source_instance"], payload)
+	}
+}
 
 func appArchive(path string) (*bytes.Reader, error) {
 	binary, err := os.ReadFile(path)

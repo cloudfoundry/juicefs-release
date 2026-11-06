@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+# Keep timestamped samples across workflow steps; diagnostics stops this process.
+while true; do
+  date --utc --iso-8601=seconds
+  free -b
+  vmstat -w 1 2
+  for resource in memory cpu io; do
+    if [[ -r "/proc/pressure/$resource" ]]; then
+      printf '%s pressure: ' "$resource"
+      cat "/proc/pressure/$resource"
+    fi
+  done
+  timeout 10 docker stats --no-stream
+  sleep 15
+done

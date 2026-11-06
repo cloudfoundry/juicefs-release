@@ -6,7 +6,7 @@ addons:
 - name: juicefs-volume-driver
   include:
     deployments: [cf]
-    instance_groups: [compute]
+    instance_groups: [diego-cell]
   jobs:
   - name: juicefs-volume-driver
     release: juicefs
