@@ -145,7 +145,8 @@ credentials. The development environment uses a copy from
 
 ## Deploy and register
 
-From the release root, with the prerequisites above available:
+For the **instant-bosh lab environment only**, run from the release root with
+the prerequisites above available:
 
 ```sh
 ./scripts/deploy
@@ -155,10 +156,14 @@ Alternatively, run `devbox run deploy` to use the same script inside the
 optional Devbox environment. `scripts/deploy` is the source of truth for the
 deployment sequence:
 
-It reads credentials from `bosh.env`, builds and uploads the release, deploys
+This lab script reads credentials from `bosh.env`, builds and uploads the release, deploys
 JuiceFS with the non-HA validation configuration, updates the JuiceFS runtime
 config, and redeploys CF with the volume-service configuration. See the
-deployment and operations files for environment-specific settings.
+deployment and operations files for environment-specific settings. It uses
+instant-bosh's `control`/`compute` groups and credential/DNS compatibility ops.
+For upstream cf-deployment, use the standard
+[CF operations and runtime-config](deployment/runtime-configs/README.md#standard-cf-deployment-and-instant-bosh)
+with your deployment's backend, credential, and DNS configuration.
 
 The main JuiceFS manifest colocates `register-broker` and `deregister-broker`
 as errands on the broker VM. Registration is a separate step, also needed after
